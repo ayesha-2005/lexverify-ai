@@ -20,7 +20,7 @@ def run_research_agent(state: AgentState, client: OpenAI) -> AgentState:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="openai/gpt-oss-120b",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": state["user_question"]}
