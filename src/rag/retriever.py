@@ -61,10 +61,10 @@ with open(
 
 chunks = metadata["chunks"]
 
-embedding_model = SentenceTransformer(
-    EMBEDDING_MODEL
-)
-
+try:
+    embedding_model = SentenceTransformer(EMBEDDING_MODEL, local_files_only=True)
+except Exception:
+    embedding_model = SentenceTransformer(EMBEDDING_MODEL)
 print(
     f"Loaded {index.ntotal} FAISS vectors "
     f"and {len(chunks)} chunks."
