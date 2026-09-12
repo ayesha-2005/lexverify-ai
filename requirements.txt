@@ -1,0 +1,6 @@
+openai
+streamlit
+faiss-cpu
+python-dotenv
+pydantic
+EOT
