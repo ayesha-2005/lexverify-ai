@@ -3,4 +3,6 @@ streamlit
 faiss-cpu
 python-dotenv
 pydantic
-EOT
+sentence-transformers
+numpy
+groq
