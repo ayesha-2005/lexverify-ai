@@ -1,1 +1,14 @@
-Truth Registry Placeholder
+{
+  "PLD 2021 SC 450": {
+    "title": "Tariq Bashir v. The State",
+    "court": "Supreme Court of Pakistan",
+    "year": "2021",
+    "snippet": "Further inquiry under Section 497(2) CrPC entitles the accused to bail as of right."
+  },
+  "2019 SCMR 120": {
+    "title": "Shahbaz Sharif v. National Accountability Bureau",
+    "court": "Supreme Court of Pakistan",
+    "year": "2019",
+    "snippet": "Prohibitory clause of Section 497 CrPC applies strictly where prima facie reasonable grounds exist."
+  }
+}
