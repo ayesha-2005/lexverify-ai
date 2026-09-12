@@ -1,14 +1,81 @@
 {
-  "PLD 2021 SC 450": {
-    "title": "Tariq Bashir v. The State",
-    "court": "Supreme Court of Pakistan",
-    "year": "2021",
-    "snippet": "Further inquiry under Section 497(2) CrPC entitles the accused to bail as of right."
+  "PLJ 2018 Cr.C. 656": {
+    "verified": true,
+    "case_name": "Muhammad Shafique v. The State and another",
+    "court": "Lahore High Court",
+    "year": 2018,
+    "source": "case_001_muhammad_shafique.pdf"
   },
-  "2019 SCMR 120": {
-    "title": "Shahbaz Sharif v. National Accountability Bureau",
+
+  "2018 YLR 323": {
+    "verified": true,
+    "case_name": "Muhammad Shafique v. The State and another",
+    "court": "Lahore High Court",
+    "year": 2018,
+    "source": "case_001_muhammad_shafique.pdf"
+  },
+
+  "2016 PSC Crl. 213": {
+    "verified": true,
+    "case_name": "Malik Nazir Ahmed v. Syed Shamas-ul-Abbas and others",
     "court": "Supreme Court of Pakistan",
-    "year": "2019",
-    "snippet": "Prohibitory clause of Section 497 CrPC applies strictly where prima facie reasonable grounds exist."
+    "year": 2016,
+    "source": "case_002_malik_nazir_ahmed.pdf"
+  },
+
+  "2016 PLD Supreme Court 171": {
+    "verified": true,
+    "case_name": "Malik Nazir Ahmed v. Syed Shamas-ul-Abbas and others",
+    "court": "Supreme Court of Pakistan",
+    "year": 2016,
+    "source": "case_002_malik_nazir_ahmed.pdf"
+  },
+
+  "2024 SCMR 1716": {
+    "verified": true,
+    "case_name": "Zeeshan S/o Gul Hussain v. The State & another",
+    "court": "Supreme Court of Pakistan",
+    "year": 2024,
+    "source": "case_003_zeeshan_gul_hussain.pdf"
+  },
+
+  "2024 SCP 253": {
+    "verified": true,
+    "case_name": "Zeeshan S/o Gul Hussain v. The State & another",
+    "court": "Supreme Court of Pakistan",
+    "year": 2024,
+    "source": "case_003_zeeshan_gul_hussain.pdf"
+  },
+
+  "PLD 2022 SC 764": {
+    "verified": true,
+    "case_name": "Tahira Batool v. The State and another",
+    "court": "Supreme Court of Pakistan",
+    "year": 2022,
+    "source": "case_004_tahira_batool.pdf"
+  },
+
+  "1993 P Cr. L. J. 781": {
+    "verified": true,
+    "case_name": "Asif Ali Zardari v. The State",
+    "court": "Sindh High Court",
+    "year": 1993,
+    "source": "case_005_asif_ali_zardari.pdf"
+  },
+
+  "K.L.R. 2001 Criminal Cases 185": {
+    "verified": true,
+    "case_name": "Mirza Javed Iqbal v. The State",
+    "court": "High Court of Azad Jammu and Kashmir",
+    "year": 2001,
+    "source": "case_006_mirza_javed_iqbal.pdf"
+  },
+
+  "PLD 2022 Supreme Court 743": {
+    "verified": true,
+    "case_name": "Syed Raza Hussain Bukhari v. The State through D.A.G. & others",
+    "court": "Supreme Court of Pakistan",
+    "year": 2022,
+    "source": "case_007_syed_raza_hussain_bukhari.pdf"
   }
 }
