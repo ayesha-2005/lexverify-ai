@@ -7,3 +7,4 @@ sentence-transformers
 numpy
 groq
 fpdf2
+reportlab
