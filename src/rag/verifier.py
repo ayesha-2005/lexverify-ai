@@ -1,49 +1,50 @@
 import json
 import re
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
-# Project root:
-# E:\LexVerify-AI\lexverify-ai
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-TRUTH_REGISTRY_PATH = PROJECT_ROOT / "data" / "truth_registry.json"
+DEFAULT_TRUTH_REGISTRY_PATH = (
+    PROJECT_ROOT / "data" / "truth_registry.json"
+)
 
 
-def load_truth_registry() -> Dict[str, Any]:
-    """
-    Load the curated Truth Registry.
+def load_truth_registry(
+    registry_path: str | Path | None = None
+) -> Dict[str, Any]:
 
-    The registry is the source of truth for citation verification.
-    """
+    path = (
+        Path(registry_path)
+        if registry_path
+        else DEFAULT_TRUTH_REGISTRY_PATH
+    )
 
-    if not TRUTH_REGISTRY_PATH.exists():
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+
+    if not path.exists():
         raise FileNotFoundError(
-            f"Truth Registry not found: {TRUTH_REGISTRY_PATH}"
+            f"Truth Registry not found: {path}"
         )
 
-    with open(TRUTH_REGISTRY_PATH, "r", encoding="utf-8") as f:
-        registry = json.load(f)
-
-    return registry
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def normalize_citation(citation: str) -> str:
-    """
-    Normalize citation formatting so small spacing/case differences
-    do not cause unnecessary rejection.
-
-    Example:
-        ' PLD 2022 SC 764 ' -> 'pld 2022 sc 764'
-    """
 
     if not citation:
         return ""
 
     citation = str(citation).strip()
 
-    # Normalize whitespace
-    citation = re.sub(r"\s+", " ", citation)
+    citation = re.sub(
+        r"\s+",
+        " ",
+        citation
+    )
 
     return citation.lower()
 
@@ -51,17 +52,17 @@ def normalize_citation(citation: str) -> str:
 def build_normalized_registry(
     registry: Dict[str, Any]
 ) -> Dict[str, Dict[str, Any]]:
-    """
-    Create a normalized lookup table while preserving the original
-    registry information.
-    """
 
     normalized = {}
 
     for citation, record in registry.items():
-        normalized_citation = normalize_citation(citation)
+
+        normalized_citation = normalize_citation(
+            citation
+        )
 
         if normalized_citation:
+
             normalized[normalized_citation] = {
                 "citation": citation,
                 **record
@@ -71,18 +72,17 @@ def build_normalized_registry(
 
 
 def verify_citations(
-    candidate_citations: List[str]
-) -> tuple[List[Dict[str, Any]], List[str]]:
-    """
-    Verify candidate citations against the curated Truth Registry.
+    candidate_citations: List[str],
+    registry_path: str | Path | None = None
+) -> Tuple[List[Dict[str, Any]], List[str]]:
 
-    Returns:
-        verified_citations
-        rejected_citations
-    """
+    registry = load_truth_registry(
+        registry_path
+    )
 
-    registry = load_truth_registry()
-    normalized_registry = build_normalized_registry(registry)
+    normalized_registry = build_normalized_registry(
+        registry
+    )
 
     verified = []
     rejected = []
@@ -95,97 +95,122 @@ def verify_citations(
         if not citation:
             continue
 
-        original_citation = str(citation).strip()
-        normalized_citation = normalize_citation(original_citation)
+        original = str(citation).strip()
 
-        if normalized_citation in normalized_registry:
+        normalized = normalize_citation(
+            original
+        )
 
-            record = normalized_registry[normalized_citation]
+        if not normalized:
+            continue
 
-            # Avoid duplicate verified citations
-            if normalized_citation not in seen_verified:
+        if normalized in normalized_registry:
+
+            record = normalized_registry[
+                normalized
+            ]
+
+            if normalized not in seen_verified:
 
                 verified.append({
                     "citation": record["citation"],
                     "verified": True,
-                    "case_name": record.get("case_name", ""),
-                    "court": record.get("court", ""),
-                    "year": record.get("year", ""),
-                    "source": record.get("source", "")
+                    "case_name": record.get(
+                        "case_name",
+                        ""
+                    ),
+                    "court": record.get(
+                        "court",
+                        ""
+                    ),
+                    "year": record.get(
+                        "year",
+                        ""
+                    ),
+                    "source": record.get(
+                        "source",
+                        ""
+                    )
                 })
 
-                seen_verified.add(normalized_citation)
+                seen_verified.add(normalized)
 
         else:
 
-            # Avoid duplicate rejected citations
-            if normalized_citation not in seen_rejected:
+            if normalized not in seen_rejected:
 
-                rejected.append(original_citation)
-                seen_rejected.add(normalized_citation)
+                rejected.append(original)
+
+                seen_rejected.add(
+                    normalized
+                )
 
     return verified, rejected
 
 
-def run_verification(state: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Verification Agent.
-
-    Reads candidate_citations from AgentState and updates:
-
-        verified_citations
-        rejected_citations
-        status
-        errors
-    """
+def run_verification(
+    state: Dict[str, Any],
+    registry_path: str | Path | None = None
+) -> Dict[str, Any]:
 
     state["status"] = "verifying"
 
     try:
 
-        candidate_citations = state.get("candidate_citations", [])
+        candidates = state.get(
+            "candidate_citations",
+            []
+        )
 
-        verified, rejected = verify_citations(candidate_citations)
+        verified, rejected = verify_citations(
+            candidates,
+            registry_path=registry_path
+        )
 
         state["verified_citations"] = verified
         state["rejected_citations"] = rejected
 
-        if rejected and verified:
+        if verified and rejected:
+
             state["status"] = "partially_verified"
 
         elif verified:
+
             state["status"] = "verified"
 
         elif rejected:
+
             state["status"] = "rejected"
 
         else:
+
             state["status"] = "no_citations"
 
         return state
 
     except Exception as e:
 
-        error_message = f"Verification error: {str(e)}"
+        state.setdefault(
+            "errors",
+            []
+        ).append(
+            f"Verification error: {str(e)}"
+        )
 
-        state.setdefault("errors", []).append(error_message)
-        state["status"] = "verification_error"
+        state["status"] = "verification_failed"
 
         return state
 
 
-# ---------------------------------------------------------
-# Backward-compatible helper
-# ---------------------------------------------------------
+def verify_citation(
+    citation: str,
+    registry_path: str | Path | None = None
+) -> Dict[str, Any]:
 
-def verify_citation(citation: str) -> Dict[str, Any]:
-    """
-    Verify a single citation.
-
-    Useful for testing and for future agent integration.
-    """
-
-    verified, rejected = verify_citations([citation])
+    verified, rejected = verify_citations(
+        [citation],
+        registry_path=registry_path
+    )
 
     if verified:
         return verified[0]
@@ -196,10 +221,6 @@ def verify_citation(citation: str) -> Dict[str, Any]:
         "reason": "Citation not found in Truth Registry"
     }
 
-
-# ---------------------------------------------------------
-# Command-line test
-# ---------------------------------------------------------
 
 if __name__ == "__main__":
 
@@ -213,8 +234,6 @@ if __name__ == "__main__":
         "PLD 2025 SC 999"
     ]
 
-    print("\nTesting citations:")
-
     for citation in test_citations:
 
         result = verify_citation(citation)
@@ -223,9 +242,19 @@ if __name__ == "__main__":
         print(f"Verified: {result['verified']}")
 
         if result["verified"]:
-            print(f"Case: {result.get('case_name')}")
-            print(f"Court: {result.get('court')}")
+
+            print(
+                f"Case: {result.get('case_name')}"
+            )
+
+            print(
+                f"Court: {result.get('court')}"
+            )
+
         else:
-            print(f"Reason: {result.get('reason')}")
+
+            print(
+                f"Reason: {result.get('reason')}"
+            )
 
     print("\n" + "=" * 60)
