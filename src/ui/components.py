@@ -623,16 +623,10 @@ def render_response_panel(response_data):
     )
 
     if answer and answer.strip():
-        # Clean HTML escaping and line breaks for proper card embedding
-        formatted_content = answer.replace("\n", "<br>")
-        st.markdown(
-            f"""
-            <div class="answer-card">
-                {formatted_content}
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        # Using st.container with border ensures Streamlit's full Markdown 
+        # parser processes bold (**), headers (#), lists (1.), and spacing natively.
+        with st.container(border=True):
+            st.markdown(answer)
     else:
         st.info(
             "No final answer was generated from "
