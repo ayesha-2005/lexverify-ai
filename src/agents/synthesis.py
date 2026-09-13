@@ -3,22 +3,6 @@ from typing import List, Dict, Any
 from openai import OpenAI
 from src.state import AgentState
 
-<<<<<<< HEAD
-def run_synthesis_agent(state: AgentState, client: OpenAI) -> AgentState:
-    """
-    Agent 4: Synthesis Agent. Answers user question using ONLY verified citations.
-    """
-    try:
-        verified_citations = state.get("verified_citations", [])
-        rejected_citations = state.get("rejected_citations", [])
-        retrieved_chunks = state.get("retrieved_chunks", [])
-
-        # STRICT GATE: Refuse if no verified citations exist
-        if not verified_citations:
-            state["final_answer"] = (
-                "No verified legal precedent was confirmed in the Truth Registry "
-                "to answer this specific query. Unverified citations from retrieved text have been excluded."
-=======
 
 def _verified_source_files(
     verified_citations: List[Dict[str, Any]]
@@ -94,32 +78,12 @@ def run_synthesis_agent(
                 "The retrieved material did not contain "
                 "a verified citation that could safely "
                 "support an answer."
->>>>>>> origin/rag-data-pipeline
             )
 
             state["status"] = "synthesis_completed"
 
             return state
 
-<<<<<<< HEAD
-        verified_text = "\n".join(
-            [f"- Citation: {item.get('citation', 'N/A')} | Title: {item.get('title', 'N/A')} | Court: {item.get('court', 'N/A')}" 
-             for item in verified_citations]
-        )
-
-        chunk_text = "\n".join(
-            [f"- Source: {c.get('source_file', 'Unknown')} | Text: {c.get('text', '')}" 
-             for c in retrieved_chunks]
-        )
-
-        system_prompt = (
-            "You are the LexVerify AI Synthesis Agent specializing in Pakistani Case Law.\n"
-            "STRICT RULES:\n"
-            "1. Answer using ONLY precedents explicitly listed under VERIFIED CITATIONS.\n"
-            "2. DO NOT cite or mention any case titles or volumes that are not listed under VERIFIED CITATIONS.\n\n"
-            f"VERIFIED CITATIONS:\n{verified_text}\n\n"
-            f"RETRIEVED CONTEXT CHUNKS:\n{chunk_text}"
-=======
         # ==================================================
         # ONLY VERIFIED EVIDENCE
         # ==================================================
@@ -158,7 +122,6 @@ def run_synthesis_agent(
 
         verified_text = "\n\n".join(
             verified_text_parts
->>>>>>> origin/rag-data-pipeline
         )
 
         # ==================================================
@@ -290,9 +253,6 @@ VERIFIED EVIDENCE
         state["status"] = "synthesis_completed"
 
     except Exception as e:
-<<<<<<< HEAD
-        state["errors"].append(f"Synthesis Error: {str(e)}")
-=======
         state.setdefault(
             "errors",
             []
@@ -300,7 +260,6 @@ VERIFIED EVIDENCE
             f"Synthesis Error: {str(e)}"
         )
 
->>>>>>> origin/rag-data-pipeline
         state["status"] = "synthesis_failed"
 
     return state
