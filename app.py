@@ -1514,33 +1514,12 @@ if state is not None:
                 "Unknown year",
             ))
 
-            st.markdown(
-                f"""
-                <div class="verified-box">
-
-                    <div class="verified-title">
-                        ✓ {escape(str(citation))}
-                    </div>
-
-                    <br>
-
-                    <b>Case:</b>
-                    {escape(str(case_name))}
-
-                    <br>
-
-                    <b>Court:</b>
-                    {escape(str(court))}
-
-                    <br>
-
-                    <b>Year:</b>
-                    {escape(str(year))}
-
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            with st.container(border=True):
+                st.markdown(f"### ✅ **{citation}**")
+                if case_name and case_name != "Unknown case":
+                    st.markdown(f"**Case:** {case_name}")
+                if court or year:
+                    st.markdown(f"**Court:** {court} | **Year:** {year}")
 
     # =====================================================
     # REJECTED CITATIONS
@@ -1578,22 +1557,9 @@ if state is not None:
                     "Citation could not be verified."
                 )
 
-            st.markdown(
-                f"""
-                <div class="rejected-box">
-
-                    <div class="rejected-title">
-                        ✗ {escape(str(citation))}
-                    </div>
-
-                    <br>
-
-                    {escape(str(reason))}
-
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            with st.container(border=True):
+                st.error(f"✗ REJECTED — {citation}")
+                st.caption(reason)
 
     # =====================================================
     # RESPONSE PANEL
