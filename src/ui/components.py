@@ -654,7 +654,7 @@ def render_response_panel(response_data):
                 court = citation.get("court", "Unknown Court")
                 year = citation.get("year", "N/A")
 
-                st.html(
+                st.markdown(
                     f"""
                     <div class="citation-card verified-card">
                         <div class="citation-status verified-status">
@@ -667,7 +667,8 @@ def render_response_panel(response_data):
                             {title} &nbsp; • &nbsp; {court} &nbsp; • &nbsp; {year}
                         </div>
                     </div>
-                    """
+                    """,
+                    unsafe_allow_html=True
                 )
             else:
                 st.success(f"✓ VERIFIED — {citation}")
@@ -687,20 +688,23 @@ def render_response_panel(response_data):
         )
 
         for citation in rejected_citations:
-            st.html(
+            citation_text = citation.get("citation", str(citation)) if isinstance(citation, dict) else str(citation)
+
+            st.markdown(
                 f"""
                 <div class="citation-card rejected-card">
                     <div class="citation-status rejected-status">
                         ✗ REJECTED
                     </div>
                     <div class="citation-main">
-                        {citation}
+                        {citation_text}
                     </div>
                     <div class="citation-meta">
                         This citation was not found in the verified truth registry.
                     </div>
                 </div>
-                """
+                """,
+                unsafe_allow_html=True
             )
 
     # -----------------------------------------------------
