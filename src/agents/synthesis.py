@@ -1,62 +1,265 @@
-import os
+from typing import List, Dict, Any
+
 from openai import OpenAI
 from src.state import AgentState
 
-def run_synthesis_agent(state: AgentState, client: OpenAI) -> AgentState:
-    """
-    Agent 4: Synthesis Agent. Answers user question using ONLY verified citations
-    and retrieved context chunks. Refuses to speculate if evidence is missing.
-    """
-    try:
-        verified_citations = state.get("verified_citations", [])
-        retrieved_chunks = state.get("retrieved_chunks", [])
 
-        # Fallback check: Refuse to generate if no verified context or chunks exist
-        if not verified_citations and not retrieved_chunks:
+def _verified_source_files(
+    verified_citations: List[Dict[str, Any]]
+) -> set:
+    sources = set()
+
+    for item in verified_citations:
+        source = item.get("source", "")
+
+        if source:
+            sources.add(source.strip())
+
+    return sources
+
+
+def _build_verified_evidence(
+    retrieved_chunks: List[Dict[str, Any]],
+    verified_citations: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """
+    Keep ONLY chunks belonging to cases whose citations
+    passed the deterministic Truth Registry gate.
+    """
+
+    verified_sources = _verified_source_files(
+        verified_citations
+    )
+
+    evidence = []
+
+    for chunk in retrieved_chunks:
+        source_file = chunk.get(
+            "source_file",
+            ""
+        ).strip()
+
+        if source_file in verified_sources:
+            evidence.append(chunk)
+
+    return evidence
+
+
+def run_synthesis_agent(
+    state: AgentState,
+    client: OpenAI
+) -> AgentState:
+    """
+    Agent 4: Synthesis Agent.
+
+    The LLM receives ONLY evidence belonging to cases
+    whose citations passed the deterministic Truth Gate.
+    """
+
+    try:
+        verified_citations = state.get(
+            "verified_citations",
+            []
+        )
+
+        retrieved_chunks = state.get(
+            "retrieved_chunks",
+            []
+        )
+
+        # ==================================================
+        # STRICT TRUTH GATE
+        # ==================================================
+
+        if not verified_citations:
             state["final_answer"] = (
-                "No verified legal precedent was found in the database "
-                "to answer this specific question."
+                "No verified legal precedent was found "
+                "in the Truth Registry for this query. "
+                "The retrieved material did not contain "
+                "a verified citation that could safely "
+                "support an answer."
             )
+
             state["status"] = "synthesis_completed"
+
             return state
 
-        verified_text = "\n".join(
-            [f"- Citation: {item.get('citation', 'N/A')} | Title: {item.get('case_name', item.get('title', 'N/A'))} | Court: {item.get('court', 'N/A')}" 
-             for item in verified_citations]
-        )
-        if not verified_text:
-            verified_text = "None verified."
+        # ==================================================
+        # ONLY VERIFIED EVIDENCE
+        # ==================================================
 
-        chunk_text = "\n".join(
-            [f"- Source: {c.get('source_file', c.get('source_doc', 'Unknown'))} | Text: {c.get('text', '')}" 
-             for c in retrieved_chunks]
+        verified_evidence = _build_verified_evidence(
+            retrieved_chunks,
+            verified_citations
         )
 
-        system_prompt = (
-            "You are the LexVerify AI Synthesis Agent specializing in Pakistani Case Law.\n"
-            "Your task is to answer the user's legal question using ONLY the provided verified citations and retrieved text chunks.\n\n"
-            "STRICT RULES:\n"
-            "1. Base your answer strictly on the verified context provided below.\n"
-            "2. DO NOT cite or mention any unverified citations outside the provided list.\n"
-            "3. Reference verified citations clearly in your output.\n\n"
-            f"VERIFIED CITATIONS:\n{verified_text}\n\n"
-            f"RETRIEVED CONTEXT CHUNKS:\n{chunk_text}"
+        if not verified_evidence:
+            state["final_answer"] = (
+                "Verified citations were found in the "
+                "Truth Registry, but no matching retrieved "
+                "evidence was available to safely answer "
+                "this query."
+            )
+
+            state["status"] = "synthesis_completed"
+
+            return state
+
+        # ==================================================
+        # VERIFIED CITATIONS
+        # ==================================================
+
+        verified_text_parts = []
+
+        for item in verified_citations:
+            verified_text_parts.append(
+                f"Citation: {item.get('citation', 'N/A')}\n"
+                f"Case: {item.get('case_name', 'N/A')}\n"
+                f"Court: {item.get('court', 'N/A')}\n"
+                f"Year: {item.get('year', 'N/A')}\n"
+                f"Source: {item.get('source', 'N/A')}"
+            )
+
+        verified_text = "\n\n".join(
+            verified_text_parts
         )
+
+        # ==================================================
+        # VERIFIED EVIDENCE
+        # ==================================================
+
+        evidence_parts = []
+
+        for index, chunk in enumerate(
+            verified_evidence,
+            start=1
+        ):
+            citations = chunk.get(
+                "citations",
+                []
+            )
+
+            if isinstance(citations, str):
+                citations = [citations]
+
+            evidence_parts.append(
+                f"""
+Evidence {index}
+
+Case:
+{chunk.get('case_name', 'Unknown')}
+
+Citation:
+{', '.join(citations)}
+
+Court:
+{chunk.get('court', 'Unknown')}
+
+Date:
+{chunk.get('date', 'Unknown')}
+
+Source:
+{chunk.get('source_file', 'Unknown')}
+
+Page:
+{chunk.get('page', 'Unknown')}
+
+Text:
+{chunk.get('text', '')}
+"""
+            )
+
+        evidence_text = "\n".join(
+            evidence_parts
+        )
+
+        # ==================================================
+        # STRICT SYNTHESIS PROMPT
+        # ==================================================
+
+        system_prompt = f"""
+You are the LexVerify AI Synthesis Agent specializing
+in Pakistani case law.
+
+Answer the user's question using ONLY the verified
+citations and verified evidence supplied below.
+
+STRICT RULES:
+
+1. Use only cases listed under VERIFIED CITATIONS.
+
+2. Do not introduce another case name.
+
+3. Do not introduce another legal citation.
+
+4. Do not invent citations.
+
+5. Do not cite cases merely mentioned inside the evidence.
+
+6. A citation is usable only if it appears under
+   VERIFIED CITATIONS.
+
+7. Base legal propositions only on VERIFIED EVIDENCE.
+
+8. If the verified evidence is insufficient, say so clearly.
+
+9. Do not claim that the corpus establishes something
+   that the evidence does not establish.
+
+10. Keep the answer concise and legally cautious.
+
+11. This system is a legal research assistant and is not
+    a substitute for professional legal advice.
+
+VERIFIED CITATIONS
+==================
+
+{verified_text}
+
+VERIFIED EVIDENCE
+=================
+
+{evidence_text}
+"""
 
         response = client.chat.completions.create(
             model="openai/gpt-oss-120b",
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": state["user_question"]}
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": state["user_question"]
+                }
             ],
-            temperature=0.2
+            temperature=0.0
         )
 
-        state["final_answer"] = response.choices[0].message.content
+        answer = (
+            response.choices[0]
+            .message
+            .content
+        )
+
+        if not answer:
+            answer = (
+                "No answer could be generated from "
+                "the verified evidence."
+            )
+
+        state["final_answer"] = answer
         state["status"] = "synthesis_completed"
 
     except Exception as e:
-        state["errors"].append(f"Synthesis Agent Error: {str(e)}")
+        state.setdefault(
+            "errors",
+            []
+        ).append(
+            f"Synthesis Error: {str(e)}"
+        )
+
         state["status"] = "synthesis_failed"
 
     return state
