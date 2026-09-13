@@ -1,257 +1,376 @@
 import json
 from pathlib import Path
+from typing import List, Dict, Any
 
 import faiss
 from sentence_transformers import SentenceTransformer
 
 
-# ============================================================
-# PATHS
-# ============================================================
+# ---------------------------------------------------------
+# Project paths
+# ---------------------------------------------------------
 
-ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-INDEX_FILE = (
-    ROOT
+FAISS_INDEX_PATH = (
+    PROJECT_ROOT
     / "data"
     / "faiss_index"
     / "legal_cases.faiss"
 )
 
-METADATA_FILE = (
-    ROOT
+FAISS_METADATA_PATH = (
+    PROJECT_ROOT
     / "data"
     / "faiss_index"
     / "metadata.json"
 )
 
 
-# ============================================================
-# EMBEDDING MODEL
-# ============================================================
+# ---------------------------------------------------------
+# Retrieval configuration
+# ---------------------------------------------------------
 
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
-
-# ============================================================
-# DEFAULT SETTINGS
-# ============================================================
-
-DEFAULT_TOP_K = 3
-
-# Minimum cosine similarity required for a chunk
-# to be considered relevant to the legal query.
-SIMILARITY_THRESHOLD = 0.30
+SIMILARITY_THRESHOLD = 0.55
 
 
-# ============================================================
-# LOAD FAISS + METADATA + EMBEDDING MODEL
-# ============================================================
+# ---------------------------------------------------------
+# Lazy-loaded resources
+# ---------------------------------------------------------
 
-print("Loading LexVerify retrieval system...")
-
-index = faiss.read_index(str(INDEX_FILE))
-
-with open(
-    METADATA_FILE,
-    "r",
-    encoding="utf-8"
-) as f:
-    metadata = json.load(f)
-
-chunks = metadata["chunks"]
-
-try:
-    embedding_model = SentenceTransformer(EMBEDDING_MODEL, local_files_only=True)
-except Exception:
-    embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-print(
-    f"Loaded {index.ntotal} FAISS vectors "
-    f"and {len(chunks)} chunks."
-)
+_model = None
+_index = None
+_metadata = None
 
 
-# ============================================================
-# REQUIRED TEAM INTERFACE
-# ============================================================
+def _load_model():
+    global _model
+
+    if _model is None:
+        _model = SentenceTransformer(
+            EMBEDDING_MODEL_NAME
+        )
+
+    return _model
+
+
+def _load_index():
+    global _index
+
+    if _index is None:
+
+        if not FAISS_INDEX_PATH.exists():
+            raise FileNotFoundError(
+                f"FAISS index not found: {FAISS_INDEX_PATH}"
+            )
+
+        _index = faiss.read_index(
+            str(FAISS_INDEX_PATH)
+        )
+
+    return _index
+
+
+def _load_metadata():
+    global _metadata
+
+    if _metadata is None:
+
+        if not FAISS_METADATA_PATH.exists():
+            raise FileNotFoundError(
+                f"FAISS metadata not found: "
+                f"{FAISS_METADATA_PATH}"
+            )
+
+        with open(
+            FAISS_METADATA_PATH,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            _metadata = json.load(f)
+
+    return _metadata
+
+
+# ---------------------------------------------------------
+# Metadata helper
+# ---------------------------------------------------------
+
+def _get_metadata_item(
+    metadata: Any,
+    index: int
+) -> Dict[str, Any]:
+
+    """
+    Supports the metadata structures produced by the
+    FAISS index-building pipeline.
+    """
+
+    if isinstance(metadata, list):
+
+        if 0 <= index < len(metadata):
+            item = metadata[index]
+
+            if isinstance(item, dict):
+                return item
+
+        return {}
+
+    if isinstance(metadata, dict):
+
+        # Possible format:
+        # {"0": {...}, "1": {...}}
+
+        item = metadata.get(str(index))
+
+        if isinstance(item, dict):
+            return item
+
+        # Possible format:
+        # {"chunks": [...]}
+
+        chunks = metadata.get("chunks")
+
+        if isinstance(chunks, list):
+            if 0 <= index < len(chunks):
+
+                item = chunks[index]
+
+                if isinstance(item, dict):
+                    return item
+
+        # Possible format:
+        # {"metadata": [...]}
+
+        metadata_list = metadata.get("metadata")
+
+        if isinstance(metadata_list, list):
+            if 0 <= index < len(metadata_list):
+
+                item = metadata_list[index]
+
+                if isinstance(item, dict):
+                    return item
+
+    return {}
+
+
+# ---------------------------------------------------------
+# Main retrieval function
+# ---------------------------------------------------------
 
 def retrieve_chunks(
-    search_queries: list[str],
+    search_queries: List[str],
     top_k: int = 3
-) -> list[dict]:
+) -> List[Dict[str, Any]]:
+
     """
-    Retrieve the most relevant legal chunks.
-
-    Required team interface:
-
-        retrieve_chunks(
-            search_queries: list[str],
-            top_k: int = 3
-        ) -> list[dict]
+    Retrieve the most relevant legal chunks from FAISS.
 
     Parameters
     ----------
     search_queries:
-        List of search queries generated by the Research Agent.
+        One or more semantic search queries.
 
     top_k:
-        Maximum number of final unique chunks to return.
+        Number of final chunks to return.
 
     Returns
     -------
-    list[dict]
-        Retrieved legal evidence containing:
-        - chunk_id
-        - case_id
-        - case_name
-        - citations
-        - court
-        - date
-        - topic
-        - sections
-        - principles
-        - source_file
-        - page
-        - score
-        - text
+    List[Dict[str, Any]]
+        Retrieved chunks with legal metadata and similarity
+        scores.
     """
 
     if not search_queries:
         return []
 
+    if isinstance(search_queries, str):
+        search_queries = [search_queries]
+
     # Remove empty queries
     queries = [
-        q.strip()
+        str(q).strip()
         for q in search_queries
-        if isinstance(q, str) and q.strip()
+        if str(q).strip()
     ]
 
     if not queries:
         return []
 
-    # Do not request more than the corpus contains
-    search_k = min(
-        max(top_k, 3),
-        index.ntotal
+    model = _load_model()
+    index = _load_index()
+    metadata = _load_metadata()
+
+    # -----------------------------------------------------
+    # Encode all search queries
+    # -----------------------------------------------------
+
+    embeddings = model.encode(
+        queries,
+        convert_to_numpy=True,
+        normalize_embeddings=True
     )
 
-    candidates = {}
+    # -----------------------------------------------------
+    # Search FAISS
+    # -----------------------------------------------------
 
-    # --------------------------------------------------------
-    # Search once for every Research Agent query
-    # --------------------------------------------------------
+    distances, indices = index.search(
+        embeddings,
+        top_k
+    )
 
-    for query in queries:
+    # -----------------------------------------------------
+    # Merge results from multiple queries
+    # -----------------------------------------------------
 
-        query_embedding = embedding_model.encode(
-            [query],
-            convert_to_numpy=True,
-            normalize_embeddings=True
-        )
+    results_by_chunk = {}
 
-        query_embedding = query_embedding.astype(
-            "float32"
-        )
+    for query_number in range(
+        len(queries)
+    ):
 
-        scores, indices = index.search(
-            query_embedding,
-            search_k
-        )
-
-        for score, chunk_index in zip(
-            scores[0],
-            indices[0]
+        for result_number in range(
+            top_k
         ):
 
+            chunk_index = int(
+                indices[
+                    query_number,
+                    result_number
+                ]
+            )
+
+            score = float(
+                distances[
+                    query_number,
+                    result_number
+                ]
+            )
+
+            # FAISS can return -1 when no result exists
             if chunk_index < 0:
                 continue
 
-            chunk = chunks[int(chunk_index)]
+            # Ignore weak matches
+            if score < SIMILARITY_THRESHOLD:
+                continue
+
+            chunk = _get_metadata_item(
+                metadata,
+                chunk_index
+            )
+
+            if not chunk:
+                continue
 
             chunk_id = chunk.get(
                 "chunk_id",
-                f"index_{chunk_index}"
+                str(chunk_index)
             )
 
-            result = {
-                "chunk_id": chunk_id,
-                "case_id": chunk.get("case_id"),
-                "case_name": chunk.get("case_name"),
-                "citations": chunk.get(
-                    "citations",
-                    []
-                ),
-                "court": chunk.get("court"),
-                "date": chunk.get("date"),
-                "topic": chunk.get("topic"),
-                "sections": chunk.get(
-                    "sections",
-                    []
-                ),
-                "principles": chunk.get(
-                    "principles",
-                    []
-                ),
-                "source_file": chunk.get(
-                    "source_file"
-                ),
-                "page": chunk.get("page"),
-                "score": float(score),
-                "text": chunk.get("text", "")
-            }
-
-            # ------------------------------------------------
-            # Deduplicate chunks returned by multiple queries
-            # ------------------------------------------------
-
+            # Keep the highest score if the same chunk
+            # appears for multiple search queries.
             if (
-                chunk_id not in candidates
-                or result["score"]
-                > candidates[chunk_id]["score"]
+                chunk_id not in results_by_chunk
+                or score > results_by_chunk[
+                    chunk_id
+                ]["score"]
             ):
-                candidates[chunk_id] = result
 
-    # --------------------------------------------------------
-    # Sort by strongest similarity
-    # --------------------------------------------------------
+                result = {
+                    "chunk_id": chunk_id,
 
-    # --------------------------------------------------------
-    # Sort by strongest similarity
-    # --------------------------------------------------------
+                    "case_id": chunk.get(
+                        "case_id",
+                        ""
+                    ),
+
+                    "case_name": chunk.get(
+                        "case_name",
+                        ""
+                    ),
+
+                    "citations": chunk.get(
+                        "citations",
+                        []
+                    ),
+
+                    "court": chunk.get(
+                        "court",
+                        ""
+                    ),
+
+                    "date": chunk.get(
+                        "date",
+                        ""
+                    ),
+
+                    "topic": chunk.get(
+                        "topic",
+                        ""
+                    ),
+
+                    "sections": chunk.get(
+                        "sections",
+                        []
+                    ),
+
+                    "principles": chunk.get(
+                        "principles",
+                        []
+                    ),
+
+                    "source_file": chunk.get(
+                        "source_file",
+                        ""
+                    ),
+
+                    "page": chunk.get(
+                        "page",
+                        ""
+                    ),
+
+                    "score": score,
+
+                    "text": chunk.get(
+                        "text",
+                        ""
+                    )
+                }
+
+                results_by_chunk[
+                    chunk_id
+                ] = result
+
+    # -----------------------------------------------------
+    # Sort by highest similarity
+    # -----------------------------------------------------
 
     results = sorted(
-        candidates.values(),
+        results_by_chunk.values(),
         key=lambda x: x["score"],
         reverse=True
     )
 
-    # --------------------------------------------------------
-    # Remove weak / unrelated results
-    # --------------------------------------------------------
-
-    results = [
-        result
-        for result in results
-        if result["score"] >= SIMILARITY_THRESHOLD
-    ]
-
-    # --------------------------------------------------------
-    # Return at most top_k relevant chunks
-    # --------------------------------------------------------
-
     return results[:top_k]
 
 
-# ============================================================
-# BACKWARD-COMPATIBLE SINGLE QUERY FUNCTION
-# ============================================================
+# ---------------------------------------------------------
+# Backward-compatible helper
+# ---------------------------------------------------------
 
 def retrieve(
     query: str,
     top_k: int = 3
-) -> list[dict]:
+) -> List[Dict[str, Any]]:
+
     """
-    Convenience wrapper for a single query.
+    Backward-compatible single-query interface.
     """
 
     return retrieve_chunks(
@@ -260,79 +379,51 @@ def retrieve(
     )
 
 
-# ============================================================
-# LOCAL TEST
-# ============================================================
+# ---------------------------------------------------------
+# Quick manual test
+# ---------------------------------------------------------
 
 if __name__ == "__main__":
 
-    print()
-    print("=" * 60)
-    print("LexVerify Retrieval Test")
-    print("=" * 60)
+    print("=" * 70)
+    print("LexVerify AI - FAISS Retriever Test")
+    print("=" * 70)
 
-    question = input(
-        "Enter a legal question: "
-    ).strip()
+    query = "bail standards in non-bailable offenses"
+
+    print(f"\nQuery: {query}")
 
     results = retrieve_chunks(
-        [question],
+        [query],
         top_k=3
     )
 
-    print()
-    print("=" * 60)
-    print(f"Retrieved {len(results)} chunks")
-    print("=" * 60)
+    print(
+        f"\nRetrieved {len(results)} chunks:\n"
+    )
 
-    for number, result in enumerate(
+    for i, result in enumerate(
         results,
         start=1
     ):
 
-        print()
-        print(f"RESULT {number}")
-        print("-" * 60)
-
         print(
-            "Score:",
-            round(result["score"], 4)
+            f"{i}. {result.get('case_name', 'Unknown')}"
         )
 
         print(
-            "Chunk:",
-            result["chunk_id"]
+            f"   Citation: "
+            f"{result.get('citations', [])}"
         )
 
         print(
-            "Case:",
-            result["case_name"]
+            f"   Score: "
+            f"{result.get('score', 0):.4f}"
         )
 
         print(
-            "Citation:",
-            ", ".join(
-                result["citations"]
-            )
-        )
-
-        print(
-            "Court:",
-            result["court"]
-        )
-
-        print(
-            "Page:",
-            result["page"]
-        )
-
-        print(
-            "Topic:",
-            result["topic"]
+            f"   Source: "
+            f"{result.get('source_file', '')}"
         )
 
         print()
-        print("Evidence:")
-        print(
-            result["text"][:1000]
-        )
