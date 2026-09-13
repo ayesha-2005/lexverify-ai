@@ -487,7 +487,7 @@ def render_verification_summary(
 
 
 def render_response_panel(state):
-    """Render the final answer in the previous response-panel style."""
+    """Render the final answer inside a clean native container supporting markdown."""
 
     st.markdown(
         '<div class="section-title">🧠 Research Response</div>',
@@ -503,21 +503,8 @@ def render_response_panel(state):
 
         cleaned_answer = clean_ui_text(str(final_answer))
 
-        safe_answer = escape(
-            cleaned_answer
-        ).replace(
-            "\n",
-            "<br>",
-        )
-
-        st.markdown(
-            f"""
-            <div class="answer-box">
-                {safe_answer}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        with st.container(border=True):
+            st.markdown(cleaned_answer)
 
     else:
 
