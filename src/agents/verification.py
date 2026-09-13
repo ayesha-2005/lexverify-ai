@@ -304,6 +304,12 @@ def run_verification_agent(
     truth_registry_path: str = "data/truth_registry.json",
 ) -> AgentState:
 
+    # Helper function to strip raw HTML tags from registry fields
+    def strip_html_tags(val: Any) -> str:
+        if not val or not isinstance(val, str):
+            return str(val) if val is not None else ""
+        return re.sub(r'<[^>]*>', '', val).strip()
+
     try:
 
         # ====================================================
@@ -503,30 +509,38 @@ def run_verification_agent(
                     verified.append(
                         {
                             "citation":
-                                official_citation,
+                                strip_html_tags(official_citation),
 
                             "case_name":
-                                metadata.get(
-                                    "case_name",
-                                    "",
+                                strip_html_tags(
+                                    metadata.get(
+                                        "case_name",
+                                        metadata.get("title", ""),
+                                    )
                                 ),
 
                             "court":
-                                metadata.get(
-                                    "court",
-                                    "",
+                                strip_html_tags(
+                                    metadata.get(
+                                        "court",
+                                        "",
+                                    )
                                 ),
 
                             "year":
-                                metadata.get(
-                                    "year",
-                                    "",
+                                strip_html_tags(
+                                    metadata.get(
+                                        "year",
+                                        "",
+                                    )
                                 ),
 
                             "source":
-                                metadata.get(
-                                    "source",
-                                    "",
+                                strip_html_tags(
+                                    metadata.get(
+                                        "source",
+                                        "",
+                                    )
                                 ),
 
                             "verified":
@@ -547,7 +561,7 @@ def run_verification_agent(
                 if normalized not in seen_rejected:
 
                     rejected.append(
-                        citation
+                        strip_html_tags(citation)
                     )
 
                     seen_rejected.add(
