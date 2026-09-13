@@ -37,11 +37,6 @@ load_dotenv()
 # =========================================================
 
 from src.orchestrator import run_lexverify_pipeline
-from src.ui.components import (
-    render_header,
-    render_workflow_status,
-    render_verification_summary,
-)
 
 
 # =========================================================
@@ -76,13 +71,6 @@ st.markdown(
         margin-bottom: 25px;
     }
 
-    .workflow-card {
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #ddd;
-        margin-bottom: 10px;
-    }
-
     .verified-box {
         padding: 15px;
         border-radius: 10px;
@@ -99,14 +87,6 @@ st.markdown(
         margin-bottom: 10px;
     }
 
-    .evidence-box {
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 5px solid #007bff;
-        background-color: #f5f9ff;
-        margin-bottom: 10px;
-    }
-
     .answer-box {
         padding: 20px;
         border-radius: 10px;
@@ -119,6 +99,127 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+# =========================================================
+# LOCAL UI FUNCTIONS
+# =========================================================
+# These functions were previously imported from
+# src.ui.components.
+# They are now inside app.py so Streamlit Cloud does not
+# depend on that module.
+
+def render_header():
+    """Render application header."""
+
+    st.markdown(
+        '<div class="main-title">⚖️ LexVerify AI</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="subtitle">'
+        "Research. Retrieve. Verify. Respond."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_workflow_status(state):
+    """Render four-agent workflow status."""
+
+    research_completed = state.get(
+        "research_completed",
+        False,
+    )
+
+    retrieval_completed = state.get(
+        "retrieval_completed",
+        False,
+    )
+
+    verification_completed = state.get(
+        "verification_completed",
+        False,
+    )
+
+    synthesis_completed = state.get(
+        "synthesis_completed",
+        False,
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            "Research",
+            "✓ Completed"
+            if research_completed
+            else "Pending",
+        )
+
+    with col2:
+        st.metric(
+            "Retrieval",
+            "✓ Completed"
+            if retrieval_completed
+            else "Pending",
+        )
+
+    with col3:
+        st.metric(
+            "Verification",
+            "✓ Completed"
+            if verification_completed
+            else "Pending",
+        )
+
+    with col4:
+        st.metric(
+            "Synthesis",
+            "✓ Completed"
+            if synthesis_completed
+            else "Pending",
+        )
+
+
+def render_verification_summary(state):
+    """Render citation verification summary."""
+
+    verified = state.get(
+        "verified_citations",
+        [],
+    )
+
+    rejected = state.get(
+        "rejected_citations",
+        [],
+    )
+
+    evidence = state.get(
+        "retrieved_chunks",
+        [],
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric(
+            "Verified",
+            len(verified),
+        )
+
+    with col2:
+        st.metric(
+            "Rejected",
+            len(rejected),
+        )
+
+    with col3:
+        st.metric(
+            "Evidence Chunks",
+            len(evidence),
+        )
 
 
 # =========================================================
@@ -144,8 +245,7 @@ if "execution_time" not in st.session_state:
 
 def create_groq_client():
     """
-    Creates an OpenAI-compatible client connected to Groq.
-    The API key is read from the environment.
+    Create an OpenAI-compatible client connected to Groq.
     """
 
     api_key = os.getenv("GROQ_API_KEY")
@@ -160,13 +260,18 @@ def create_groq_client():
 
 
 # =========================================================
-# PDF GENERATION FUNCTION
+# PDF GENERATION
 # =========================================================
 
-def create_pdf_report(query, state, execution_time=None):
+def create_pdf_report(
+    query,
+    state,
+    execution_time=None,
+):
     """
-    Generate a PDF report containing:
-    - User query
+    Generate a PDF research report containing:
+
+    - Legal query
     - Final answer
     - Verified citations
     - Rejected citations
@@ -223,9 +328,9 @@ def create_pdf_report(query, state, execution_time=None):
 
     story = []
 
-    # -----------------------------------------------------
+    # =====================================================
     # TITLE
-    # -----------------------------------------------------
+    # =====================================================
 
     story.append(
         Paragraph(
@@ -241,11 +346,13 @@ def create_pdf_report(query, state, execution_time=None):
         )
     )
 
-    story.append(Spacer(1, 15))
+    story.append(
+        Spacer(1, 15)
+    )
 
-    # -----------------------------------------------------
-    # QUERY
-    # -----------------------------------------------------
+    # =====================================================
+    # LEGAL QUERY
+    # =====================================================
 
     story.append(
         Paragraph(
@@ -254,7 +361,12 @@ def create_pdf_report(query, state, execution_time=None):
         )
     )
 
-    safe_query = str(query).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    safe_query = (
+        str(query)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
 
     story.append(
         Paragraph(
@@ -264,6 +376,7 @@ def create_pdf_report(query, state, execution_time=None):
     )
 
     if execution_time is not None:
+
         story.append(
             Paragraph(
                 f"Execution Time: {execution_time:.2f} seconds",
@@ -271,11 +384,13 @@ def create_pdf_report(query, state, execution_time=None):
             )
         )
 
-    story.append(Spacer(1, 10))
+    story.append(
+        Spacer(1, 10)
+    )
 
-    # -----------------------------------------------------
+    # =====================================================
     # FINAL ANSWER
-    # -----------------------------------------------------
+    # =====================================================
 
     story.append(
         Paragraph(
@@ -284,12 +399,17 @@ def create_pdf_report(query, state, execution_time=None):
         )
     )
 
-    final_answer = state.get("final_answer", "")
+    final_answer = state.get(
+        "final_answer",
+        "",
+    )
 
     if not final_answer:
+
         final_answer = (
-            "No final answer was generated because the verification "
-            "pipeline did not produce sufficient verified evidence."
+            "No final answer was generated because the "
+            "verification pipeline did not produce "
+            "sufficient verified evidence."
         )
 
     safe_answer = (
@@ -307,9 +427,9 @@ def create_pdf_report(query, state, execution_time=None):
         )
     )
 
-    # -----------------------------------------------------
+    # =====================================================
     # VERIFIED CITATIONS
-    # -----------------------------------------------------
+    # =====================================================
 
     story.append(
         Paragraph(
@@ -318,16 +438,31 @@ def create_pdf_report(query, state, execution_time=None):
         )
     )
 
-    verified_citations = state.get("verified_citations", [])
+    verified_citations = state.get(
+        "verified_citations",
+        [],
+    )
 
     if verified_citations:
 
         table_data = [
             [
-                Paragraph("<b>Citation</b>", body_style),
-                Paragraph("<b>Case</b>", body_style),
-                Paragraph("<b>Court</b>", body_style),
-                Paragraph("<b>Year</b>", body_style),
+                Paragraph(
+                    "<b>Citation</b>",
+                    body_style,
+                ),
+                Paragraph(
+                    "<b>Case</b>",
+                    body_style,
+                ),
+                Paragraph(
+                    "<b>Court</b>",
+                    body_style,
+                ),
+                Paragraph(
+                    "<b>Year</b>",
+                    body_style,
+                ),
             ]
         ]
 
@@ -336,17 +471,44 @@ def create_pdf_report(query, state, execution_time=None):
             if not isinstance(item, dict):
                 continue
 
-            citation = item.get("citation", "")
-            case_name = item.get("case_name", "")
-            court = item.get("court", "")
-            year = item.get("year", "")
+            citation = item.get(
+                "citation",
+                "",
+            )
+
+            case_name = item.get(
+                "case_name",
+                "",
+            )
+
+            court = item.get(
+                "court",
+                "",
+            )
+
+            year = item.get(
+                "year",
+                "",
+            )
 
             table_data.append(
                 [
-                    Paragraph(str(citation), body_style),
-                    Paragraph(str(case_name), body_style),
-                    Paragraph(str(court), body_style),
-                    Paragraph(str(year), body_style),
+                    Paragraph(
+                        str(citation),
+                        body_style,
+                    ),
+                    Paragraph(
+                        str(case_name),
+                        body_style,
+                    ),
+                    Paragraph(
+                        str(court),
+                        body_style,
+                    ),
+                    Paragraph(
+                        str(year),
+                        body_style,
+                    ),
                 ]
             )
 
@@ -354,7 +516,12 @@ def create_pdf_report(query, state, execution_time=None):
 
             table = Table(
                 table_data,
-                colWidths=[95, 190, 100, 45],
+                colWidths=[
+                    95,
+                    190,
+                    100,
+                    45,
+                ],
                 repeatRows=1,
             )
 
@@ -411,6 +578,7 @@ def create_pdf_report(query, state, execution_time=None):
             story.append(table)
 
         else:
+
             story.append(
                 Paragraph(
                     "No verified citations were available.",
@@ -427,9 +595,9 @@ def create_pdf_report(query, state, execution_time=None):
             )
         )
 
-    # -----------------------------------------------------
+    # =====================================================
     # REJECTED CITATIONS
-    # -----------------------------------------------------
+    # =====================================================
 
     story.append(
         Paragraph(
@@ -438,18 +606,27 @@ def create_pdf_report(query, state, execution_time=None):
         )
     )
 
-    rejected_citations = state.get("rejected_citations", [])
+    rejected_citations = state.get(
+        "rejected_citations",
+        [],
+    )
 
     if rejected_citations:
 
         for item in rejected_citations:
 
             if isinstance(item, dict):
+
                 citation_text = item.get(
                     "citation",
-                    item.get("text", str(item)),
+                    item.get(
+                        "text",
+                        str(item),
+                    ),
                 )
+
             else:
+
                 citation_text = str(item)
 
             safe_citation = (
@@ -461,7 +638,7 @@ def create_pdf_report(query, state, execution_time=None):
 
             story.append(
                 Paragraph(
-                    f"✗ REJECTED — {safe_citation}",
+                    f"REJECTED — {safe_citation}",
                     body_style,
                 )
             )
@@ -475,9 +652,9 @@ def create_pdf_report(query, state, execution_time=None):
             )
         )
 
-    # -----------------------------------------------------
+    # =====================================================
     # RETRIEVED EVIDENCE
-    # -----------------------------------------------------
+    # =====================================================
 
     story.append(
         Paragraph(
@@ -486,23 +663,35 @@ def create_pdf_report(query, state, execution_time=None):
         )
     )
 
-    evidence_chunks = state.get("retrieved_chunks", [])
+    evidence_chunks = state.get(
+        "retrieved_chunks",
+        [],
+    )
 
     if evidence_chunks:
 
-        for index, chunk in enumerate(evidence_chunks, start=1):
+        for index, chunk in enumerate(
+            evidence_chunks,
+            start=1,
+        ):
 
             if not isinstance(chunk, dict):
                 continue
 
             source_file = chunk.get(
                 "source_file",
-                chunk.get("source", "Unknown source"),
+                chunk.get(
+                    "source",
+                    "Unknown source",
+                ),
             )
 
             text = chunk.get(
                 "text",
-                chunk.get("content", ""),
+                chunk.get(
+                    "content",
+                    "",
+                ),
             )
 
             safe_source = (
@@ -522,7 +711,8 @@ def create_pdf_report(query, state, execution_time=None):
 
             story.append(
                 Paragraph(
-                    f"<b>Evidence {index}</b> — {safe_source}",
+                    f"<b>Evidence {index}</b> — "
+                    f"{safe_source}",
                     body_style,
                 )
             )
@@ -543,11 +733,13 @@ def create_pdf_report(query, state, execution_time=None):
             )
         )
 
-    # -----------------------------------------------------
+    # =====================================================
     # DISCLAIMER
-    # -----------------------------------------------------
+    # =====================================================
 
-    story.append(PageBreak())
+    story.append(
+        PageBreak()
+    )
 
     story.append(
         Paragraph(
@@ -558,10 +750,11 @@ def create_pdf_report(query, state, execution_time=None):
 
     disclaimer = (
         "LexVerify AI is a legal research assistance tool. "
-        "It does not provide legal advice and should not be treated "
-        "as a substitute for professional legal judgment. "
-        "Citations and evidence shown in this report are limited "
-        "to the application's verified corpus."
+        "It does not provide legal advice and should not be "
+        "treated as a substitute for professional legal "
+        "judgment. Citations and evidence shown in this "
+        "report are limited to the application's verified "
+        "corpus."
     )
 
     story.append(
@@ -571,9 +764,9 @@ def create_pdf_report(query, state, execution_time=None):
         )
     )
 
-    # -----------------------------------------------------
+    # =====================================================
     # BUILD PDF
-    # -----------------------------------------------------
+    # =====================================================
 
     doc.build(story)
 
@@ -584,21 +777,7 @@ def create_pdf_report(query, state, execution_time=None):
 # HEADER
 # =========================================================
 
-try:
-    render_header()
-except Exception:
-
-    st.markdown(
-        '<div class="main-title">⚖️ LexVerify AI</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        '<div class="subtitle">'
-        "Research. Retrieve. Verify. Respond."
-        "</div>",
-        unsafe_allow_html=True,
-    )
+render_header()
 
 
 # =========================================================
@@ -656,9 +835,7 @@ if bail_button:
     )
 
     st.session_state.submitted_query = ""
-
     st.session_state.pipeline_state = None
-
     st.session_state.execution_time = None
 
     st.rerun()
@@ -671,9 +848,7 @@ if fake_button:
     )
 
     st.session_state.submitted_query = ""
-
     st.session_state.pipeline_state = None
-
     st.session_state.execution_time = None
 
     st.rerun()
@@ -686,9 +861,7 @@ if corpus_button:
     )
 
     st.session_state.submitted_query = ""
-
     st.session_state.pipeline_state = None
-
     st.session_state.execution_time = None
 
     st.rerun()
@@ -698,17 +871,18 @@ if corpus_button:
 # MAIN INPUT
 # =========================================================
 
-st.subheader("Ask a Legal Research Question")
+st.subheader(
+    "Ask a Legal Research Question"
+)
 
 user_question = st.text_area(
     "Enter your question",
-    value=st.session_state.user_query,
     height=120,
     placeholder=(
         "Example: What are the principles governing "
         "bail in cases of prolonged detention?"
     ),
-    key="query_input",
+    key="user_query",
 )
 
 
@@ -729,7 +903,9 @@ search_clicked = st.button(
 
 if search_clicked:
 
-    submitted_query = user_question.strip()
+    submitted_query = (
+        user_question.strip()
+    )
 
     if not submitted_query:
 
@@ -739,9 +915,9 @@ if search_clicked:
 
     else:
 
-        # IMPORTANT:
-        # Clear all old pipeline results BEFORE running
-        # a new query. This prevents stale Streamlit state.
+        # -------------------------------------------------
+        # CLEAR PREVIOUS RESULTS
+        # -------------------------------------------------
 
         st.session_state.pipeline_state = None
         st.session_state.execution_time = None
@@ -760,7 +936,7 @@ if search_clicked:
 
             st.error(
                 "GROQ_API_KEY is not configured. "
-                "Please add it to your environment or Streamlit secrets."
+                "Please add it to Streamlit Secrets."
             )
 
             st.stop()
@@ -783,16 +959,25 @@ if search_clicked:
                     client,
                 )
 
-                execution_time = time.time() - start_time
+                execution_time = (
+                    time.time() - start_time
+                )
 
                 st.session_state.pipeline_state = state
-                st.session_state.execution_time = execution_time
+
+                st.session_state.execution_time = (
+                    execution_time
+                )
 
             except Exception as exc:
 
-                execution_time = time.time() - start_time
+                execution_time = (
+                    time.time() - start_time
+                )
 
-                st.session_state.execution_time = execution_time
+                st.session_state.execution_time = (
+                    execution_time
+                )
 
                 st.error(
                     f"Pipeline error: {exc}"
@@ -807,6 +992,7 @@ if search_clicked:
 
 state = st.session_state.pipeline_state
 
+
 if state is not None:
 
     st.divider()
@@ -815,74 +1001,13 @@ if state is not None:
     # WORKFLOW STATUS
     # =====================================================
 
-    st.subheader("Agent Workflow")
+    st.subheader(
+        "Agent Workflow"
+    )
 
-    try:
-
-        render_workflow_status(state)
-
-    except Exception:
-
-        # Fallback status display if component rendering
-        # is unavailable.
-
-        research_completed = state.get(
-            "research_completed",
-            False,
-        )
-
-        retrieval_completed = state.get(
-            "retrieval_completed",
-            False,
-        )
-
-        verification_completed = state.get(
-            "verification_completed",
-            False,
-        )
-
-        synthesis_completed = state.get(
-            "synthesis_completed",
-            False,
-        )
-
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-
-            st.metric(
-                "Research",
-                "✓ Completed"
-                if research_completed
-                else "Pending",
-            )
-
-        with col2:
-
-            st.metric(
-                "Retrieval",
-                "✓ Completed"
-                if retrieval_completed
-                else "Pending",
-            )
-
-        with col3:
-
-            st.metric(
-                "Verification",
-                "✓ Completed"
-                if verification_completed
-                else "Pending",
-            )
-
-        with col4:
-
-            st.metric(
-                "Synthesis",
-                "✓ Completed"
-                if synthesis_completed
-                else "Pending",
-            )
+    render_workflow_status(
+        state
+    )
 
     # =====================================================
     # VERIFICATION SUMMARY
@@ -890,51 +1015,13 @@ if state is not None:
 
     st.divider()
 
-    st.subheader("Citation Verification")
+    st.subheader(
+        "Citation Verification"
+    )
 
-    try:
-
-        render_verification_summary(state)
-
-    except Exception:
-
-        verified = state.get(
-            "verified_citations",
-            [],
-        )
-
-        rejected = state.get(
-            "rejected_citations",
-            [],
-        )
-
-        evidence = state.get(
-            "retrieved_chunks",
-            [],
-        )
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-
-            st.metric(
-                "Verified",
-                len(verified),
-            )
-
-        with col2:
-
-            st.metric(
-                "Rejected",
-                len(rejected),
-            )
-
-        with col3:
-
-            st.metric(
-                "Evidence Chunks",
-                len(evidence),
-            )
+    render_verification_summary(
+        state
+    )
 
     # =====================================================
     # VERIFIED CITATIONS
@@ -947,7 +1034,9 @@ if state is not None:
 
     if verified_citations:
 
-        st.subheader("✅ Verified Citations")
+        st.subheader(
+            "✅ Verified Citations"
+        )
 
         for item in verified_citations:
 
@@ -1002,7 +1091,9 @@ if state is not None:
 
     if rejected_citations:
 
-        st.subheader("❌ Rejected / Unverified Citations")
+        st.subheader(
+            "❌ Rejected / Unverified Citations"
+        )
 
         for item in rejected_citations:
 
@@ -1010,7 +1101,10 @@ if state is not None:
 
                 citation = item.get(
                     "citation",
-                    item.get("text", str(item)),
+                    item.get(
+                        "text",
+                        str(item),
+                    ),
                 )
 
                 reason = item.get(
@@ -1021,7 +1115,10 @@ if state is not None:
             else:
 
                 citation = str(item)
-                reason = "Citation could not be verified."
+
+                reason = (
+                    "Citation could not be verified."
+                )
 
             st.markdown(
                 f"""
@@ -1042,7 +1139,9 @@ if state is not None:
 
     st.divider()
 
-    st.subheader("🧠 Final Answer")
+    st.subheader(
+        "🧠 Final Answer"
+    )
 
     final_answer = state.get(
         "final_answer",
@@ -1074,7 +1173,9 @@ if state is not None:
 
     st.divider()
 
-    st.subheader("📚 Retrieved Evidence")
+    st.subheader(
+        "📚 Retrieved Evidence"
+    )
 
     evidence_chunks = state.get(
         "retrieved_chunks",
@@ -1111,7 +1212,9 @@ if state is not None:
                 f"Evidence {index} — {source_file}"
             ):
 
-                st.markdown(text)
+                st.markdown(
+                    text
+                )
 
     else:
 
@@ -1123,7 +1226,9 @@ if state is not None:
     # EXECUTION TIME
     # =====================================================
 
-    execution_time = st.session_state.execution_time
+    execution_time = (
+        st.session_state.execution_time
+    )
 
     if execution_time is not None:
 
@@ -1138,7 +1243,9 @@ if state is not None:
 
     st.divider()
 
-    st.subheader("📄 Export Research Report")
+    st.subheader(
+        "📄 Export Research Report"
+    )
 
     try:
 
@@ -1151,7 +1258,9 @@ if state is not None:
         st.download_button(
             label="📥 Download PDF Report",
             data=pdf_bytes,
-            file_name="lexverify_ai_legal_research_report.pdf",
+            file_name=(
+                "lexverify_ai_legal_research_report.pdf"
+            ),
             mime="application/pdf",
             use_container_width=True,
         )
@@ -1170,8 +1279,8 @@ if state is not None:
 else:
 
     st.info(
-        "Enter a legal research question or select a demo query "
-        "from the sidebar to begin."
+        "Enter a legal research question or select "
+        "a demo query from the sidebar to begin."
     )
 
     st.markdown(
