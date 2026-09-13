@@ -162,25 +162,27 @@ def load_custom_css():
            ANSWER CARD
         ========================= */
 
-       .answer-card {
-    background: #ffffff;
-    border: 1px solid #dce4ed;
-    border-left: 5px solid #1f6feb;
-    border-radius: 12px;
-    padding: 1.5rem 1.8rem;
-    box-shadow: 0 4px 15px rgba(16, 42, 67, 0.05);
-    line-height: 1.8;
-    font-size: 1rem;
-    color: #1e293b;
-    margin-bottom: 1.5rem;
-}
-.answer-card p {
-    margin-bottom: 1rem;
-}
-.answer-card ul, .answer-card ol {
-    margin-left: 1.5rem;
-    margin-bottom: 1rem;
-}
+        .answer-card {
+            background: #ffffff;
+            border: 1px solid #dce4ed;
+            border-left: 5px solid #1f6feb;
+            border-radius: 12px;
+            padding: 1.5rem 1.8rem;
+            box-shadow: 0 4px 15px rgba(16, 42, 67, 0.05);
+            line-height: 1.8;
+            font-size: 1rem;
+            color: #1e293b;
+            margin-bottom: 1.5rem;
+        }
+        
+        .answer-card p {
+            margin-bottom: 1rem;
+        }
+        
+        .answer-card ul, .answer-card ol {
+            margin-left: 1.5rem;
+            margin-bottom: 1rem;
+        }
 
 
         /* =========================
@@ -604,6 +606,7 @@ def render_verification_summary(
 # =========================================================
 # RESPONSE PANEL
 # =========================================================
+
 def render_response_panel(response_data):
     # -----------------------------------------------------
     # FINAL ANSWER
@@ -620,16 +623,11 @@ def render_response_panel(response_data):
     )
 
     if answer and answer.strip():
-        # Wrap response in styled container while using st.markdown for proper formatting
+        # Using a styled boundary container to keep Markdown clean & inside the card
         with st.container():
-            st.markdown(
-                f"""
-                <div class="answer-card">
-                """,
-                unsafe_allow_html=True
-            )
+            st.markdown('<div class="answer-card">', unsafe_allow_html=True)
             st.markdown(answer)
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info(
             "No final answer was generated from "
@@ -747,6 +745,7 @@ def render_response_panel(response_data):
 
                 if index < len(retrieved_chunks):
                     st.divider()
+
 
 # =========================================================
 # SIDEBAR ENGINE METRICS
