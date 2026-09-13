@@ -7,8 +7,5 @@ sentence-transformers
 numpy
 groq
 fpdf2
-<<<<<<< HEAD
 torchvision
-=======
 reportlab
->>>>>>> 0bbc4d9d4eb733755b85de25b81a35e988bc6026
