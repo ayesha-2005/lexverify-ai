@@ -3,6 +3,7 @@ import os
 import time
 from io import BytesIO
 from html import escape
+import re
 
 import streamlit as st
 from openai import OpenAI
@@ -20,6 +21,16 @@ from reportlab.platypus import (
     TableStyle,
     PageBreak,
 )
+
+
+def clean_ui_text(text):
+    """Safely strips code block wrappers and raw HTML tags for clean UI display."""
+    if not isinstance(text, str):
+        return str(text) if text is not None else ""
+    cleaned = re.sub(r'```[a-zA-Z]*', '', text)
+    cleaned = cleaned.replace('```', '')
+    return cleaned.strip()
+
 
 # =========================================================
 # PATH SETUP
@@ -490,8 +501,10 @@ def render_response_panel(state):
 
     if final_answer and final_answer.strip():
 
+        cleaned_answer = clean_ui_text(str(final_answer))
+
         safe_answer = escape(
-            str(final_answer)
+            cleaned_answer
         ).replace(
             "\n",
             "<br>",
@@ -705,8 +718,9 @@ def create_pdf_report(
             "sufficient verified evidence."
         )
 
+    cleaned_final_answer = clean_ui_text(str(final_answer))
     safe_answer = (
-        escape(str(final_answer))
+        escape(cleaned_final_answer)
         .replace("\n", "<br/>")
     )
 
@@ -761,28 +775,10 @@ def create_pdf_report(
             if not isinstance(item, dict):
                 continue
 
-            citation = item.get(
-                "citation",
-                "",
-            )
-
-            case_name = item.get(
-                "case_name",
-                item.get(
-                    "title",
-                    "",
-                ),
-            )
-
-            court = item.get(
-                "court",
-                "",
-            )
-
-            year = item.get(
-                "year",
-                "",
-            )
+            citation = clean_ui_text(item.get("citation", ""))
+            case_name = clean_ui_text(item.get("case_name", item.get("title", "")))
+            court = clean_ui_text(item.get("court", ""))
+            year = clean_ui_text(item.get("year", ""))
 
             table_data.append(
                 [
@@ -922,10 +918,12 @@ def create_pdf_report(
 
                 citation_text = str(item)
 
+            cleaned_citation_text = clean_ui_text(str(citation_text))
+
             story.append(
                 Paragraph(
                     "REJECTED — "
-                    + escape(str(citation_text)),
+                    + escape(cleaned_citation_text),
                     body_style,
                 )
             )
@@ -984,7 +982,7 @@ def create_pdf_report(
             story.append(
                 Paragraph(
                     f"<b>Evidence {index}</b> — "
-                    f"{escape(str(source_file))}",
+                    f"{escape(clean_ui_text(str(source_file)))}",
                     body_style,
                 )
             )
@@ -992,7 +990,7 @@ def create_pdf_report(
             story.append(
                 Paragraph(
                     escape(
-                        str(text)
+                        clean_ui_text(str(text))
                     ).replace(
                         "\n",
                         "<br/>",
@@ -1493,28 +1491,28 @@ if state is not None:
             if not isinstance(item, dict):
                 continue
 
-            citation = item.get(
+            citation = clean_ui_text(item.get(
                 "citation",
                 "Unknown citation",
-            )
+            ))
 
-            case_name = item.get(
+            case_name = clean_ui_text(item.get(
                 "case_name",
                 item.get(
                     "title",
                     "Unknown case",
                 ),
-            )
+            ))
 
-            court = item.get(
+            court = clean_ui_text(item.get(
                 "court",
                 "Unknown court",
-            )
+            ))
 
-            year = item.get(
+            year = clean_ui_text(item.get(
                 "year",
                 "Unknown year",
-            )
+            ))
 
             st.markdown(
                 f"""
@@ -1559,22 +1557,22 @@ if state is not None:
 
             if isinstance(item, dict):
 
-                citation = item.get(
+                citation = clean_ui_text(item.get(
                     "citation",
                     item.get(
                         "text",
                         str(item),
                     ),
-                )
+                ))
 
-                reason = item.get(
+                reason = clean_ui_text(item.get(
                     "reason",
                     "Citation could not be verified.",
-                )
+                ))
 
             else:
 
-                citation = str(item)
+                citation = clean_ui_text(str(item))
 
                 reason = (
                     "Citation could not be verified."
@@ -1656,11 +1654,11 @@ if state is not None:
             )
 
             with st.expander(
-                f"📄 Evidence {index} — {source_file}"
+                f"📄 Evidence {index} — {clean_ui_text(str(source_file))}"
             ):
 
                 st.markdown(
-                    str(text)
+                    clean_ui_text(str(text))
                 )
 
     else:
