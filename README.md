@@ -4,12 +4,10 @@
 
 > \*\*Research. Retrieve. Verify. Respond.\*\*
 
-[!\[Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python\&logoColor=white)](https://www.python.org/)
-[!\[Streamlit](https://img.shields.io/badge/Streamlit-App-FF4B4B?logo=streamlit\&logoColor=white)](https://streamlit.io/)
-[!\[Groq](https://img.shields.io/badge/Groq-API-orange)](https://groq.com/)
-[!\[FAISS](https://img.shields.io/badge/FAISS-Vector%20Search-green)](https://github.com/facebookresearch/faiss)
-[!\[License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.30%2B-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Groq API](https://img.shields.io/badge/Groq-API-F05138?style=for-the-badge&logo=groq&logoColor=white)](https://groq.com/)
+[![FAISS](https://img.shields.io/badge/VectorDB-FAISS-00599C?style=for-the-badge&logo=meta&logoColor=white)](https://github.com/facebookresearch/faiss)
 \---
 
 ## 📑 Table of Contents
