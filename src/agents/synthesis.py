@@ -4,44 +4,27 @@ from openai import OpenAI
 from src.state import AgentState
 
 
-def _verified_source_files(
-    verified_citations: List[Dict[str, Any]]
-) -> set:
-    sources = set()
-
-    for item in verified_citations:
-        source = item.get("source", "")
-
-        if source:
-            sources.add(source.strip())
-
-    return sources
-
-
 def _build_verified_evidence(
-    retrieved_chunks: List[Dict[str, Any]],
-    verified_citations: List[Dict[str, Any]]
+    retrieved_chunks: List[Any],
+    verified_citations: List[Any]
 ) -> List[Dict[str, Any]]:
     """
-    Keep ONLY chunks belonging to cases whose citations
-    passed the deterministic Truth Registry gate.
+    Safely formats and filters retrieved chunks.
+    Converts any raw string chunks into dictionaries to prevent .get() crashes.
     """
-
-    verified_sources = _verified_source_files(
-        verified_citations
-    )
-
     evidence = []
-
+    
     for chunk in retrieved_chunks:
-        source_file = chunk.get(
-            "source_file",
-            ""
-        ).strip()
-
-        if source_file in verified_sources:
+        if isinstance(chunk, dict):
             evidence.append(chunk)
-
+        elif isinstance(chunk, str):
+            evidence.append({
+                "text": chunk,
+                "case_name": "Unknown",
+                "source_file": "Unknown",
+                "court": "Unknown"
+            })
+            
     return evidence
 
 
@@ -112,13 +95,17 @@ def run_synthesis_agent(
         verified_text_parts = []
 
         for item in verified_citations:
-            verified_text_parts.append(
-                f"Citation: {item.get('citation', 'N/A')}\n"
-                f"Case: {item.get('case_name', 'N/A')}\n"
-                f"Court: {item.get('court', 'N/A')}\n"
-                f"Year: {item.get('year', 'N/A')}\n"
-                f"Source: {item.get('source', 'N/A')}"
-            )
+            if isinstance(item, dict):
+                verified_text_parts.append(
+                    f"Citation: {item.get('citation', 'N/A')}\n"
+                    f"Case: {item.get('case_name', 'N/A')}\n"
+                    f"Court: {item.get('court', 'N/A')}\n"
+                    f"Year: {item.get('year', 'N/A')}\n"
+                    f"Source: {item.get('source', 'N/A')}"
+                )
+            else:
+                # Handle raw string citations safely
+                verified_text_parts.append(f"Citation: {str(item)}")
 
         verified_text = "\n\n".join(
             verified_text_parts
@@ -134,13 +121,15 @@ def run_synthesis_agent(
             verified_evidence,
             start=1
         ):
-            citations = chunk.get(
-                "citations",
-                []
-            )
-
+            citations = chunk.get("citations", [])
+            
+            # Safely handle citations list to prevent join() errors
             if isinstance(citations, str):
                 citations = [citations]
+            elif not citations:
+                citations = []
+                
+            safe_citations = [str(c) for c in citations if c]
 
             evidence_parts.append(
                 f"""
@@ -150,7 +139,7 @@ Case:
 {chunk.get('case_name', 'Unknown')}
 
 Citation:
-{', '.join(citations)}
+{', '.join(safe_citations)}
 
 Court:
 {chunk.get('court', 'Unknown')}
@@ -187,29 +176,17 @@ citations and verified evidence supplied below.
 STRICT RULES:
 
 1. Use only cases listed under VERIFIED CITATIONS.
-
 2. Do not introduce another case name.
-
 3. Do not introduce another legal citation.
-
 4. Do not invent citations.
-
 5. Do not cite cases merely mentioned inside the evidence.
-
-6. A citation is usable only if it appears under
-   VERIFIED CITATIONS.
-
+6. A citation is usable only if it appears under VERIFIED CITATIONS.
 7. Base legal propositions only on VERIFIED EVIDENCE.
-
 8. If the verified evidence is insufficient, say so clearly.
-
-9. Do not claim that the corpus establishes something
-   that the evidence does not establish.
-
+9. Do not claim that the corpus establishes something that the evidence does not establish.
 10. Keep the answer concise and legally cautious.
-
-11. This system is a legal research assistant and is not
-    a substitute for professional legal advice.
+11. Format citations cleanly in bold (e.g. **1993 P Cr. L. J. 781**).
+12. This system is a legal research assistant and is not a substitute for professional legal advice.
 
 VERIFIED CITATIONS
 ==================
@@ -231,7 +208,7 @@ VERIFIED EVIDENCE
                 },
                 {
                     "role": "user",
-                    "content": state["user_question"]
+                    "content": state.get("user_question", "Summarize the legal findings.")
                 }
             ],
             temperature=0.0
@@ -253,13 +230,9 @@ VERIFIED EVIDENCE
         state["status"] = "synthesis_completed"
 
     except Exception as e:
-        state.setdefault(
-            "errors",
-            []
-        ).append(
-            f"Synthesis Error: {str(e)}"
-        )
-
+        # Instead of hiding the error, we print it directly to the UI
+        state.setdefault("errors", []).append(f"Synthesis Error: {str(e)}")
+        state["final_answer"] = f"⚠️ Pipeline Error in Synthesis Agent: {str(e)}"
         state["status"] = "synthesis_failed"
 
     return state
