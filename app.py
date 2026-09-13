@@ -1,4 +1,3 @@
-```python
 import sys
 import os
 import time
@@ -1802,4 +1801,3 @@ else:
 # =========================================================
 
 render_footer()
-```
