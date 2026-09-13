@@ -623,11 +623,16 @@ def render_response_panel(response_data):
     )
 
     if answer and answer.strip():
-        # Using a styled boundary container to keep Markdown clean & inside the card
-        with st.container():
-            st.markdown('<div class="answer-card">', unsafe_allow_html=True)
-            st.markdown(answer)
-            st.markdown('</div>', unsafe_allow_html=True)
+        # Clean HTML escaping and line breaks for proper card embedding
+        formatted_content = answer.replace("\n", "<br>")
+        st.markdown(
+            f"""
+            <div class="answer-card">
+                {formatted_content}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
     else:
         st.info(
             "No final answer was generated from "
@@ -745,7 +750,6 @@ def render_response_panel(response_data):
 
                 if index < len(retrieved_chunks):
                     st.divider()
-
 
 # =========================================================
 # SIDEBAR ENGINE METRICS
