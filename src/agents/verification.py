@@ -3,31 +3,38 @@ import os
 import re
 from src.state import AgentState
 
-# Comprehensive Regex for Pakistani Case Law Citations
+# Updated Regex: Handles dots inside reporter acronyms like PCr.LJ, P.Cr.L.J., P Cr. LJ
 CITATION_REGEX = re.compile(
     r'\b(?:'
-    r'(?:PLD|PLJ|SCMR|YLR|CLC|PCrLJ|PTD|PLC|GBLR|KLR|PSC)\s+\d{4}(?:\s+[A-Za-z\.]+)*\s+\d+|'
-    r'\d{4}\s+(?:PLD|PLJ|SCMR|YLR|CLC|PCrLJ|PTD|PLC|GBLR|KLR|PSC)(?:\s+[A-Za-z\.]+)*\s+\d+'
+    r'(?:PLD|PLJ|SCMR|YLR|CLC|PCr\.?LJ|PCrLJ|PTD|PLC|GBLR|KLR|PSC)\s+\d{4}(?:\s+[A-Za-z\.]+)*\s+\d+|'
+    r'\d{4}\s+(?:PLD|PLJ|SCMR|YLR|CLC|PCr\.?LJ|PCrLJ|PTD|PLC|GBLR|KLR|PSC)(?:\s+[A-Za-z\.]+)*\s+\d+|'
+    r'\d{4}\s+P\s*\.?\s*Cr\s*\.?\s*L\s*\.?\s*J\s*\.?\s*\d+'
     r')\b',
     re.IGNORECASE
 )
 
 def normalize_citation(citation: str) -> str:
-    """Normalizes citation strings for consistent lookup."""
+    """
+    Aggressively normalizes citations so '1993 PCr.LJ 781', '1993 P Cr. L. J. 781',
+    and '1993 PCRLJ 781' all resolve to the exact same key.
+    """
     if not citation:
         return ""
     c = str(citation).upper().strip()
     
-    # Handle CRL. abbreviation variation before stripping periods
-    c = c.replace("CRL.", "CRL")
+    # Standardize common Pakistani reporter variations
+    c = c.replace("SUPREME COURT", "SC")
+    c = c.replace("CRIMINAL CASES", "CR")
     
-    # Normalize common court acronyms and remove remaining periods
-    c = c.replace("SUPREME COURT", "SC").replace("CRIMINAL CASES", "CR").replace(".", "")
+    # Remove all periods and internal spaces inside reporter names (e.g. P. CR. L. J. -> PCRLJ)
+    c = c.replace(".", "")
     c = re.sub(r'(?<=[A-Z])\s+(?=[A-Z])', '', c)
+    
+    # Collapse multiple spaces
     return re.sub(r'\s+', ' ', c)
 
 def extract_citations_from_text(text: str) -> list[str]:
-    """Extracts Pakistani legal citations directly from text."""
+    """Extracts Pakistani legal reporter citations directly from raw text."""
     if not text:
         return []
     matches = CITATION_REGEX.findall(text)
@@ -35,7 +42,7 @@ def extract_citations_from_text(text: str) -> list[str]:
 
 def run_verification_agent(state: AgentState, truth_registry_path: str = "data/truth_registry.json") -> AgentState:
     """
-    Agent 3: Verification Gate. Checks extracted citations against truth_registry.json.
+    Agent 3: Deterministic Verification Gate.
     """
     try:
         if not os.path.exists(truth_registry_path):
@@ -46,13 +53,15 @@ def run_verification_agent(state: AgentState, truth_registry_path: str = "data/t
         with open(truth_registry_path, "r", encoding="utf-8") as f:
             truth_registry = json.load(f)
 
+        # Build normalized registry mapping
         normalized_registry = {}
         for raw_key, meta in truth_registry.items():
             norm_k = normalize_citation(raw_key)
             normalized_registry[norm_k] = (raw_key, meta)
 
-        # Force extraction from chunks if candidates list is empty
         candidates = state.get("candidate_citations", [])
+        
+        # Force extraction from chunks if candidate list is empty
         if not candidates:
             all_text_content = state.get("user_question", "") + " "
             for chunk in state.get("retrieved_chunks", []):
