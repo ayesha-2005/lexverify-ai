@@ -3,6 +3,7 @@ import os
 import time
 from io import BytesIO
 from html import escape
+import re
 
 import streamlit as st
 from openai import OpenAI
@@ -20,6 +21,60 @@ from reportlab.platypus import (
     TableStyle,
     PageBreak,
 )
+
+
+def sanitize_pipeline_state(state):
+    """
+    Strips raw HTML tags, breaks, and code block wrappers from pipeline output data
+    before sending it to UI components.
+    """
+    if not state:
+        return state
+
+    def clean_text(val):
+        if not isinstance(val, str):
+            return val
+        # Strip code block wrappers and raw HTML tags
+        clean = re.sub(r'```[a-zA-Z]*', '', val)
+        clean = re.sub(r'<[^>]*>', ' ', clean)
+        clean = re.sub(r'\s+', ' ', clean)
+        return clean.strip()
+
+    # Sanitize verified citations
+    if "verified_citations" in state and isinstance(state["verified_citations"], list):
+        cleaned_verified = []
+        for item in state["verified_citations"]:
+            if isinstance(item, dict):
+                cleaned_verified.append({
+                    "citation": clean_text(item.get("citation", "")),
+                    "case_name": clean_text(item.get("case_name", item.get("title", ""))),
+                    "court": clean_text(item.get("court", "")),
+                    "year": clean_text(item.get("year", "")),
+                    "source": clean_text(item.get("source", ""))
+                })
+            elif isinstance(item, str):
+                cleaned_str = clean_text(item)
+                if cleaned_str:
+                    cleaned_verified.append(cleaned_str)
+        state["verified_citations"] = cleaned_verified
+
+    # Sanitize rejected citations
+    if "rejected_citations" in state and isinstance(state["rejected_citations"], list):
+        cleaned_rejected = []
+        for item in state["rejected_citations"]:
+            if isinstance(item, dict):
+                cleaned_rejected.append({
+                    "citation": clean_text(item.get("citation", "")),
+                    "reason": clean_text(item.get("reason", "Citation could not be verified."))
+                })
+            elif isinstance(item, str):
+                cleaned_str = clean_text(item)
+                if cleaned_str:
+                    cleaned_rejected.append(cleaned_str)
+        state["rejected_citations"] = cleaned_rejected
+
+    return state
+
 
 # =========================================================
 # PATH SETUP
@@ -166,54 +221,6 @@ st.markdown(
     .status-value {
         font-size: 13px;
         margin-top: 5px;
-    }
-
-    /* -----------------------------------------------------
-       VERIFIED CITATIONS
-    ----------------------------------------------------- */
-
-    .verified-box {
-        padding: 16px;
-        border-radius: 10px;
-        border-left: 5px solid #28a745;
-        background-color: #f3fff5;
-        margin-bottom: 10px;
-    }
-
-    .verified-title {
-        font-size: 16px;
-        font-weight: 700;
-    }
-
-    /* -----------------------------------------------------
-       REJECTED CITATIONS
-    ----------------------------------------------------- */
-
-    .rejected-box {
-        padding: 16px;
-        border-radius: 10px;
-        border-left: 5px solid #dc3545;
-        background-color: #fff5f5;
-        margin-bottom: 10px;
-    }
-
-    .rejected-title {
-        font-size: 16px;
-        font-weight: 700;
-    }
-
-    /* -----------------------------------------------------
-       FINAL ANSWER
-    ----------------------------------------------------- */
-
-    .answer-box {
-        padding: 22px;
-        border-radius: 12px;
-        background-color: #f8f9fa;
-        border: 1px solid #e1e5e9;
-        line-height: 1.75;
-        font-size: 16px;
-        margin-top: 8px;
     }
 
     /* -----------------------------------------------------
@@ -476,7 +483,7 @@ def render_verification_summary(
 
 
 def render_response_panel(state):
-    """Render the final answer in the previous response-panel style."""
+    """Render the final answer in native Streamlit Markdown card style."""
 
     st.markdown(
         '<div class="section-title">🧠 Research Response</div>',
@@ -489,25 +496,9 @@ def render_response_panel(state):
     )
 
     if final_answer and final_answer.strip():
-
-        safe_answer = escape(
-            str(final_answer)
-        ).replace(
-            "\n",
-            "<br>",
-        )
-
-        st.markdown(
-            f"""
-            <div class="answer-box">
-                {safe_answer}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
+        with st.container(border=True):
+            st.markdown(final_answer.strip())
     else:
-
         st.info(
             "No final answer was generated."
         )
@@ -560,7 +551,7 @@ def create_groq_client():
         return None
 
     return OpenAI(
-        base_url="https://api.groq.com/openai/v1",
+        base_url="[https://api.groq.com/openai/v1](https://api.groq.com/openai/v1)",
         api_key=api_key,
     )
 
@@ -758,31 +749,16 @@ def create_pdf_report(
 
         for item in verified_citations:
 
-            if not isinstance(item, dict):
-                continue
-
-            citation = item.get(
-                "citation",
-                "",
-            )
-
-            case_name = item.get(
-                "case_name",
-                item.get(
-                    "title",
-                    "",
-                ),
-            )
-
-            court = item.get(
-                "court",
-                "",
-            )
-
-            year = item.get(
-                "year",
-                "",
-            )
+            if isinstance(item, dict):
+                citation = item.get("citation", "")
+                case_name = item.get("case_name", item.get("title", ""))
+                court = item.get("court", "")
+                year = item.get("year", "")
+            else:
+                citation = str(item)
+                case_name = "N/A"
+                court = "N/A"
+                year = "N/A"
 
             table_data.append(
                 [
@@ -909,17 +885,11 @@ def create_pdf_report(
         for item in rejected_citations:
 
             if isinstance(item, dict):
-
                 citation_text = item.get(
                     "citation",
-                    item.get(
-                        "text",
-                        str(item),
-                    ),
+                    item.get("text", str(item)),
                 )
-
             else:
-
                 citation_text = str(item)
 
             story.append(
@@ -967,18 +937,12 @@ def create_pdf_report(
 
             source_file = chunk.get(
                 "source_file",
-                chunk.get(
-                    "source",
-                    "Unknown source",
-                ),
+                chunk.get("source", "Unknown source"),
             )
 
             text = chunk.get(
                 "text",
-                chunk.get(
-                    "content",
-                    "",
-                ),
+                chunk.get("content", ""),
             )
 
             story.append(
@@ -991,12 +955,7 @@ def create_pdf_report(
 
             story.append(
                 Paragraph(
-                    escape(
-                        str(text)
-                    ).replace(
-                        "\n",
-                        "<br/>",
-                    ),
+                    escape(str(text)).replace("\n", "<br/>"),
                     body_style,
                 )
             )
@@ -1274,13 +1233,9 @@ with st.form(
 
 if search_clicked:
 
-    submitted_query = (
-        user_question.strip()
-    )
+    submitted_query = user_question.strip()
 
-    st.session_state.user_query = (
-        submitted_query
-    )
+    st.session_state.user_query = submitted_query
 
     if not submitted_query:
 
@@ -1374,6 +1329,9 @@ state = st.session_state.pipeline_state
 
 if state is not None:
 
+    # Clean raw HTML strings from state data objects before rendering
+    state = sanitize_pipeline_state(state)
+
     st.divider()
 
     # =====================================================
@@ -1464,15 +1422,9 @@ if state is not None:
     # =====================================================
 
     render_verification_summary(
-        verified_count=len(
-            verified_citations
-        ),
-        rejected_count=len(
-            rejected_citations
-        ),
-        evidence_count=len(
-            retrieved_chunks
-        ),
+        verified_count=len(verified_citations),
+        rejected_count=len(rejected_citations),
+        evidence_count=len(retrieved_chunks),
     )
 
     st.divider()
@@ -1490,59 +1442,20 @@ if state is not None:
 
         for item in verified_citations:
 
-            if not isinstance(item, dict):
-                continue
+            with st.container(border=True):
+                if isinstance(item, dict):
+                    cit_text = item.get("citation", "Verified Precedent")
+                    case_name = item.get("case_name", "")
+                    court = item.get("court", "")
+                    year = item.get("year", "")
 
-            citation = item.get(
-                "citation",
-                "Unknown citation",
-            )
-
-            case_name = item.get(
-                "case_name",
-                item.get(
-                    "title",
-                    "Unknown case",
-                ),
-            )
-
-            court = item.get(
-                "court",
-                "Unknown court",
-            )
-
-            year = item.get(
-                "year",
-                "Unknown year",
-            )
-
-            st.markdown(
-                f"""
-                <div class="verified-box">
-
-                    <div class="verified-title">
-                        ✓ {escape(str(citation))}
-                    </div>
-
-                    <br>
-
-                    <b>Case:</b>
-                    {escape(str(case_name))}
-
-                    <br>
-
-                    <b>Court:</b>
-                    {escape(str(court))}
-
-                    <br>
-
-                    <b>Year:</b>
-                    {escape(str(year))}
-
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+                    st.markdown(f"### ✅ **{cit_text}**")
+                    if case_name:
+                        st.markdown(f"**Case:** {case_name}")
+                    if court or year:
+                        st.markdown(f"**Court:** {court} | **Year:** {year}")
+                else:
+                    st.success(f"✓ {item}")
 
     # =====================================================
     # REJECTED CITATIONS
@@ -1557,45 +1470,16 @@ if state is not None:
 
         for item in rejected_citations:
 
-            if isinstance(item, dict):
+            with st.container(border=True):
+                if isinstance(item, dict):
+                    citation_text = item.get("citation", str(item))
+                    reason_text = item.get("reason", "Citation could not be verified.")
+                else:
+                    citation_text = str(item)
+                    reason_text = "Citation could not be verified."
 
-                citation = item.get(
-                    "citation",
-                    item.get(
-                        "text",
-                        str(item),
-                    ),
-                )
-
-                reason = item.get(
-                    "reason",
-                    "Citation could not be verified.",
-                )
-
-            else:
-
-                citation = str(item)
-
-                reason = (
-                    "Citation could not be verified."
-                )
-
-            st.markdown(
-                f"""
-                <div class="rejected-box">
-
-                    <div class="rejected-title">
-                        ✗ {escape(str(citation))}
-                    </div>
-
-                    <br>
-
-                    {escape(str(reason))}
-
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+                st.error(f"✗ REJECTED — {citation_text}")
+                st.caption(reason_text)
 
     # =====================================================
     # RESPONSE PANEL
@@ -1603,9 +1487,7 @@ if state is not None:
 
     st.divider()
 
-    render_response_panel(
-        state
-    )
+    render_response_panel(state)
 
     # =====================================================
     # RETRIEVED EVIDENCE
@@ -1659,9 +1541,7 @@ if state is not None:
                 f"📄 Evidence {index} — {source_file}"
             ):
 
-                st.markdown(
-                    str(text)
-                )
+                st.markdown(str(text))
 
     else:
 
