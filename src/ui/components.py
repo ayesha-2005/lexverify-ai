@@ -162,26 +162,25 @@ def load_custom_css():
            ANSWER CARD
         ========================= */
 
-        .answer-card {
-            background: white;
-
-            border: 1px solid #dce4ed;
-
-            border-left: 5px solid #1f6feb;
-
-            border-radius: 14px;
-
-            padding: 1.4rem 1.5rem;
-
-            box-shadow:
-                0 4px 15px rgba(16, 42, 67, 0.06);
-
-            line-height: 1.7;
-
-            margin-bottom: 1rem;
-
-            color: #25364a;
-        }
+       .answer-card {
+    background: #ffffff;
+    border: 1px solid #dce4ed;
+    border-left: 5px solid #1f6feb;
+    border-radius: 12px;
+    padding: 1.5rem 1.8rem;
+    box-shadow: 0 4px 15px rgba(16, 42, 67, 0.05);
+    line-height: 1.8;
+    font-size: 1rem;
+    color: #1e293b;
+    margin-bottom: 1.5rem;
+}
+.answer-card p {
+    margin-bottom: 1rem;
+}
+.answer-card ul, .answer-card ol {
+    margin-left: 1.5rem;
+    margin-bottom: 1rem;
+}
 
 
         /* =========================
@@ -605,9 +604,7 @@ def render_verification_summary(
 # =========================================================
 # RESPONSE PANEL
 # =========================================================
-
 def render_response_panel(response_data):
-
     # -----------------------------------------------------
     # FINAL ANSWER
     # -----------------------------------------------------
@@ -623,148 +620,101 @@ def render_response_panel(response_data):
     )
 
     if answer and answer.strip():
-
-        st.html(
-            f"""
-            <div class="answer-card">
-                {answer}
-            </div>
-            """
-        )
-
+        # Wrap response in styled container while using st.markdown for proper formatting
+        with st.container():
+            st.markdown(
+                f"""
+                <div class="answer-card">
+                """,
+                unsafe_allow_html=True
+            )
+            st.markdown(answer)
+            st.markdown("</div>", unsafe_allow_html=True)
     else:
-
         st.info(
             "No final answer was generated from "
             "the available legal evidence."
         )
 
-
     # -----------------------------------------------------
     # VERIFIED CITATIONS
     # -----------------------------------------------------
-
     verified_citations = response_data.get(
         "verified_citations",
         []
     )
 
     if verified_citations:
-
         render_section_title(
             "Verified Citations",
             "🟢"
         )
 
         for citation in verified_citations:
-
             if isinstance(citation, dict):
-
-                citation_text = citation.get(
-                    "citation",
-                    "Unknown citation"
-                )
-
-                title = citation.get(
-                    "title",
-                    citation.get(
-                        "case_name",
-                        "Unknown Case"
-                    )
-                )
-
-                court = citation.get(
-                    "court",
-                    "Unknown Court"
-                )
-
-                year = citation.get(
-                    "year",
-                    "N/A"
-                )
+                citation_text = citation.get("citation", "Unknown citation")
+                title = citation.get("title", citation.get("case_name", "Unknown Case"))
+                court = citation.get("court", "Unknown Court")
+                year = citation.get("year", "N/A")
 
                 st.html(
                     f"""
                     <div class="citation-card verified-card">
-
                         <div class="citation-status verified-status">
                             ✓ VERIFIED
                         </div>
-
                         <div class="citation-main">
                             {citation_text}
                         </div>
-
                         <div class="citation-meta">
-                            {title}
-                            &nbsp; • &nbsp;
-                            {court}
-                            &nbsp; • &nbsp;
-                            {year}
+                            {title} &nbsp; • &nbsp; {court} &nbsp; • &nbsp; {year}
                         </div>
-
                     </div>
                     """
                 )
-
             else:
-
-                st.success(
-                    f"✓ VERIFIED — {citation}"
-                )
-
+                st.success(f"✓ VERIFIED — {citation}")
 
     # -----------------------------------------------------
     # REJECTED CITATIONS
     # -----------------------------------------------------
-
     rejected_citations = response_data.get(
         "rejected_citations",
         []
     )
 
     if rejected_citations:
-
         render_section_title(
             "Rejected Citations",
             "🔴"
         )
 
         for citation in rejected_citations:
-
             st.html(
                 f"""
                 <div class="citation-card rejected-card">
-
                     <div class="citation-status rejected-status">
                         ✗ REJECTED
                     </div>
-
                     <div class="citation-main">
                         {citation}
                     </div>
-
                     <div class="citation-meta">
-                        This citation was not found
-                        in the verified truth registry.
+                        This citation was not found in the verified truth registry.
                     </div>
-
                 </div>
                 """
             )
 
-
     # -----------------------------------------------------
-    # EVIDENCE
+    # EVIDENCE DRAWER
     # -----------------------------------------------------
-
     retrieved_chunks = response_data.get(
         "retrieved_chunks",
         []
     )
 
     if retrieved_chunks:
-
         render_section_title(
             "Evidence",
             "📚"
@@ -778,45 +728,25 @@ def render_response_panel(response_data):
             "🔍 View Retrieved Evidence",
             expanded=False
         ):
-
             for index, chunk in enumerate(
                 retrieved_chunks,
                 start=1
             ):
-
                 if isinstance(chunk, dict):
-
                     source = chunk.get(
                         "source_file",
-                        chunk.get(
-                            "source_doc",
-                            "Unknown source"
-                        )
+                        chunk.get("source_doc", "Unknown source")
                     )
+                    text = chunk.get("text", "No evidence text available.")
 
-                    text = chunk.get(
-                        "text",
-                        "No evidence text available."
-                    )
-
-                    st.markdown(
-                        f"**Evidence {index}**"
-                    )
-
-                    st.markdown(
-                        f"**Source:** `{source}`"
-                    )
-
+                    st.markdown(f"**Evidence {index}**")
+                    st.markdown(f"**Source:** `{source}`")
                     st.write(text)
-
                 else:
-
                     st.write(chunk)
 
                 if index < len(retrieved_chunks):
-
                     st.divider()
-
 
 # =========================================================
 # SIDEBAR ENGINE METRICS

@@ -20,6 +20,77 @@ from src.ui.components import (
     render_execution_time,
     render_footer,
 )
+from fpdf import FPDF
+
+# =========================================================
+# PDF HELPER FUNCTION
+# =========================================================
+# =========================================================
+# PDF HELPER FUNCTION
+# =========================================================
+
+def generate_pdf_report(user_question, final_answer, verified_citations, rejected_citations, retrieved_chunks):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    # Effective page width to prevent margin overflow errors
+    epw = pdf.epw 
+    
+    # Title Header
+    pdf.set_font("Helvetica", style="B", size=16)
+    pdf.cell(epw, 10, "LEXVERIFY AI - VERIFIED LEGAL RESEARCH REPORT", new_x="LMARGIN", new_y="NEXT", align="C")
+    pdf.ln(5)
+    
+    # Legal Query
+    pdf.set_font("Helvetica", style="B", size=11)
+    pdf.cell(epw, 6, "LEGAL QUERY:", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", size=10)
+    pdf.multi_cell(epw, 6, user_question.encode('latin-1', 'replace').decode('latin-1'))
+    pdf.ln(4)
+    
+    # Final Answer
+    pdf.set_font("Helvetica", style="B", size=11)
+    pdf.cell(epw, 6, "FINAL LEGAL ANALYSIS:", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", size=10)
+    pdf.multi_cell(epw, 6, final_answer.encode('latin-1', 'replace').decode('latin-1'))
+    pdf.ln(4)
+    
+    # Verified Citations
+    pdf.set_font("Helvetica", style="B", size=11)
+    pdf.cell(epw, 6, "VERIFIED CITATIONS:", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", size=10)
+    if verified_citations:
+        for c in verified_citations:
+            if isinstance(c, dict):
+                c_str = c.get('citation', c.get('title', str(c)))
+            else:
+                c_str = str(c)
+            pdf.multi_cell(epw, 6, f"- [VERIFIED] {c_str}".encode('latin-1', 'replace').decode('latin-1'))
+    else:
+        pdf.multi_cell(epw, 6, "No verified citations found.")
+    pdf.ln(4)
+
+    # Rejected Citations (Fixed long-string parsing issue)
+    pdf.set_font("Helvetica", style="B", size=11)
+    pdf.cell(epw, 6, "REJECTED CITATIONS:", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", size=10)
+    if rejected_citations:
+        for c in rejected_citations:
+            if isinstance(c, dict):
+                c_str = c.get('citation', str(c))
+            else:
+                c_str = str(c)
+            pdf.multi_cell(epw, 6, f"- [REJECTED] {c_str}".encode('latin-1', 'replace').decode('latin-1'))
+    else:
+        pdf.multi_cell(epw, 6, "No rejected citations.")
+    pdf.ln(4)
+
+    # Disclaimer
+    pdf.set_font("Helvetica", style="I", size=8)
+    pdf.multi_cell(epw, 5, "Disclaimer: LexVerify AI is an AI-assisted legal research tool. Always verify legal information against official sources.")
+    
+    return bytes(pdf.output())
 
 
 # =========================================================
@@ -263,9 +334,6 @@ if state is not None:
         "synthesis": "completed",
     }
 
-    # If pipeline failed at a particular stage,
-    # reflect the failure in the UI.
-
     pipeline_status = state.get(
         "status",
         ""
@@ -345,7 +413,7 @@ if state is not None:
 
 
     # -----------------------------------------------------
-    # EXPORT VERIFIED REPORT
+    # EXPORT VERIFIED REPORT (PDF)
     # -----------------------------------------------------
 
     final_answer = state.get(
@@ -360,223 +428,19 @@ if state is not None:
             unsafe_allow_html=True
         )
 
-        # Build readable TXT report
-
-        report_lines = []
-
-        report_lines.append(
-            "LEXVERIFY AI — VERIFIED LEGAL RESEARCH REPORT"
+        pdf_bytes = generate_pdf_report(
+            user_question=user_question,
+            final_answer=final_answer,
+            verified_citations=verified_citations,
+            rejected_citations=rejected_citations,
+            retrieved_chunks=retrieved_chunks
         )
-
-        report_lines.append("=" * 55)
-
-        report_lines.append("")
-
-        report_lines.append(
-            f"Legal Query: {user_question}"
-        )
-
-        report_lines.append("")
-
-        report_lines.append(
-            "FINAL ANSWER"
-        )
-
-        report_lines.append("-" * 55)
-
-        report_lines.append(
-            final_answer
-        )
-
-        report_lines.append("")
-
-
-        # Verified citations
-
-        report_lines.append(
-            "VERIFIED CITATIONS"
-        )
-
-        report_lines.append("-" * 55)
-
-        if verified_citations:
-
-            for citation in verified_citations:
-
-                if isinstance(citation, dict):
-
-                    citation_text = citation.get(
-                        "citation",
-                        "Unknown citation"
-                    )
-
-                    title = citation.get(
-                        "title",
-                        citation.get(
-                            "case_name",
-                            "Unknown Case"
-                        )
-                    )
-
-                    court = citation.get(
-                        "court",
-                        "Unknown Court"
-                    )
-
-                    year = citation.get(
-                        "year",
-                        "N/A"
-                    )
-
-                    report_lines.append(
-                        f"✓ VERIFIED — {citation_text}"
-                    )
-
-                    report_lines.append(
-                        f"Case: {title}"
-                    )
-
-                    report_lines.append(
-                        f"Court: {court}"
-                    )
-
-                    report_lines.append(
-                        f"Year: {year}"
-                    )
-
-                    report_lines.append("")
-
-                else:
-
-                    report_lines.append(
-                        f"✓ VERIFIED — {citation}"
-                    )
-
-        else:
-
-            report_lines.append(
-                "No verified citations found."
-            )
-
-
-        # Rejected citations
-
-        report_lines.append("")
-
-        report_lines.append(
-            "REJECTED CITATIONS"
-        )
-
-        report_lines.append("-" * 55)
-
-        if rejected_citations:
-
-            for citation in rejected_citations:
-
-                report_lines.append(
-                    f"✗ REJECTED — {citation}"
-                )
-
-        else:
-
-            report_lines.append(
-                "No rejected citations."
-            )
-
-
-        # Evidence
-
-        report_lines.append("")
-
-        report_lines.append(
-            "RETRIEVED EVIDENCE"
-        )
-
-        report_lines.append("-" * 55)
-
-        if retrieved_chunks:
-
-            for index, chunk in enumerate(
-                retrieved_chunks,
-                start=1
-            ):
-
-                if isinstance(chunk, dict):
-
-                    source = chunk.get(
-                        "source_file",
-                        chunk.get(
-                            "source_doc",
-                            "Unknown source"
-                        )
-                    )
-
-                    text = chunk.get(
-                        "text",
-                        ""
-                    )
-
-                    report_lines.append(
-                        f"Evidence {index}"
-                    )
-
-                    report_lines.append(
-                        f"Source: {source}"
-                    )
-
-                    report_lines.append(
-                        text
-                    )
-
-                    report_lines.append("")
-
-                else:
-
-                    report_lines.append(
-                        f"Evidence {index}:"
-                    )
-
-                    report_lines.append(
-                        str(chunk)
-                    )
-
-                    report_lines.append("")
-
-        else:
-
-            report_lines.append(
-                "No retrieved evidence available."
-            )
-
-
-        # Disclaimer
-
-        report_lines.append("")
-
-        report_lines.append(
-            "DISCLAIMER"
-        )
-
-        report_lines.append("-" * 55)
-
-        report_lines.append(
-            "LexVerify AI is an AI-assisted legal research tool. "
-            "Always verify legal information against official "
-            "sources and consult a qualified legal professional "
-            "when necessary."
-        )
-
-
-        report_content = "\n".join(
-            report_lines
-        )
-
 
         st.download_button(
-            label="⬇️ Download Verified Report (.txt)",
-            data=report_content,
-            file_name="lexverify_verified_report.txt",
-            mime="text/plain",
+            label="⬇️ Download Verified Report (.pdf)",
+            data=pdf_bytes,
+            file_name="lexverify_verified_report.pdf",
+            mime="application/pdf",
             use_container_width=True
         )
 
