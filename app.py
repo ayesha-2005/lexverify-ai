@@ -1,6 +1,10 @@
+import sys
 import os
-import time
 
+# Ensure project root is in sys.path for Streamlit Cloud deployment
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+import time
 import streamlit as st
 from openai import OpenAI
 from dotenv import load_dotenv
