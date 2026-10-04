@@ -325,9 +325,14 @@ def retrieve_chunks(
                         []
                     ),
 
-                    "source_file": chunk.get(
-                        "source_file",
+                    "document_type": chunk.get(
+                        "document_type",
                         ""
+                    ),
+
+                    "source_file": chunk.get(
+                         "source_file",
+                         ""
                     ),
 
                     "page": chunk.get(

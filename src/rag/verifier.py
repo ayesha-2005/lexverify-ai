@@ -1,260 +1,389 @@
 import json
 import re
-from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from typing import Any, Dict, List, Optional
+
+from rapidfuzz import fuzz
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# ============================================================
+# Configuration
+# ============================================================
 
-DEFAULT_TRUTH_REGISTRY_PATH = (
-    PROJECT_ROOT / "data" / "truth_registry.json"
-)
+FUZZY_THRESHOLD = 90
 
 
-def load_truth_registry(
-    registry_path: str | Path | None = None
-) -> Dict[str, Any]:
-
-    path = (
-        Path(registry_path)
-        if registry_path
-        else DEFAULT_TRUTH_REGISTRY_PATH
-    )
-
-    if not path.is_absolute():
-        path = PROJECT_ROOT / path
-
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Truth Registry not found: {path}"
-        )
-
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
+# ============================================================
+# Citation Normalization
+# ============================================================
 
 def normalize_citation(citation: str) -> str:
-
-    if not citation:
-        return ""
+    """
+    Normalize citation formatting while preserving
+    the actual legal citation information.
+    """
 
     citation = str(citation).strip()
 
+    # Lowercase
+    citation = citation.lower()
+
+    # Normalize whitespace
+    citation = re.sub(r"\s+", " ", citation)
+
+    # Normalize common spacing around punctuation
+    citation = re.sub(r"\s*,\s*", ", ", citation)
+    citation = re.sub(r"\s*-\s*", "-", citation)
+
+    # Remove unnecessary spaces between common citation components.
+    # Example:
+    # PLD 2024 SC 123
+    # PLD 2024 SC123
     citation = re.sub(
-        r"\s+",
-        " ",
-        citation
+        r"\b(sc|pld|scr|ylr|psc|clc)\s+(\d+)\b",
+        r"\1 \2",
+        citation,
+        flags=re.IGNORECASE
     )
 
-    return citation.lower()
+    return citation.strip()
 
+
+# ============================================================
+# Registry Preparation
+# ============================================================
 
 def build_normalized_registry(
-    registry: Dict[str, Any]
+    truth_registry: List[Dict[str, Any]]
 ) -> Dict[str, Dict[str, Any]]:
+    """
+    Build normalized citation lookup.
 
-    normalized = {}
+    Expected registry format:
 
-    for citation, record in registry.items():
+    [
+        {
+            "citation": "PLD 2021 SC 1",
+            "source": "Justice_Qazi_Faez_Isa.pdf",
+            ...
+        }
+    ]
+    """
 
-        normalized_citation = normalize_citation(
-            citation
-        )
+    normalized_registry = {}
 
-        if normalized_citation:
-
-            normalized[normalized_citation] = {
-                "citation": citation,
-                **record
-            }
-
-    return normalized
-
-
-def verify_citations(
-    candidate_citations: List[str],
-    registry_path: str | Path | None = None
-) -> Tuple[List[Dict[str, Any]], List[str]]:
-
-    registry = load_truth_registry(
-        registry_path
-    )
-
-    normalized_registry = build_normalized_registry(
-        registry
-    )
-
-    verified = []
-    rejected = []
-
-    seen_verified = set()
-    seen_rejected = set()
-
-    for citation in candidate_citations:
+    for record in truth_registry:
+        citation = record.get("citation")
 
         if not citation:
             continue
 
-        original = str(citation).strip()
+        normalized = normalize_citation(citation)
 
-        normalized = normalize_citation(
-            original
-        )
+        normalized_registry[normalized] = record
 
-        if not normalized:
+    return normalized_registry
+
+
+# ============================================================
+# Fuzzy Matching
+# ============================================================
+
+def find_fuzzy_match(
+    citation: str,
+    truth_registry: List[Dict[str, Any]],
+    threshold: int = FUZZY_THRESHOLD
+):
+    """
+    Find the strongest fuzzy match in the Truth Registry.
+
+    Returns:
+
+    {
+        "record": registry record or None,
+        "score": integer,
+        "matched_citation": string or None
+    }
+    """
+
+    normalized_candidate = normalize_citation(citation)
+
+    best_record = None
+    best_score = 0
+    best_citation = None
+
+    for record in truth_registry:
+        registry_citation = record.get("citation")
+
+        if not registry_citation:
             continue
 
-        if normalized in normalized_registry:
-
-            record = normalized_registry[
-                normalized
-            ]
-
-            if normalized not in seen_verified:
-
-                verified.append({
-                    "citation": record["citation"],
-                    "verified": True,
-                    "case_name": record.get(
-                        "case_name",
-                        ""
-                    ),
-                    "court": record.get(
-                        "court",
-                        ""
-                    ),
-                    "year": record.get(
-                        "year",
-                        ""
-                    ),
-                    "source": record.get(
-                        "source",
-                        ""
-                    )
-                })
-
-                seen_verified.add(normalized)
-
-        else:
-
-            if normalized not in seen_rejected:
-
-                rejected.append(original)
-
-                seen_rejected.add(
-                    normalized
-                )
-
-    return verified, rejected
-
-
-def run_verification(
-    state: Dict[str, Any],
-    registry_path: str | Path | None = None
-) -> Dict[str, Any]:
-
-    state["status"] = "verifying"
-
-    try:
-
-        candidates = state.get(
-            "candidate_citations",
-            []
+        normalized_registry = normalize_citation(
+            registry_citation
         )
 
-        verified, rejected = verify_citations(
-            candidates,
-            registry_path=registry_path
+        score = fuzz.ratio(
+            normalized_candidate,
+            normalized_registry
         )
 
-        state["verified_citations"] = verified
-        state["rejected_citations"] = rejected
+        if score > best_score:
+            best_score = score
+            best_record = record
+            best_citation = registry_citation
 
-        if verified and rejected:
+    if best_record and best_score >= threshold:
+        return {
+            "record": best_record,
+            "score": best_score,
+            "matched_citation": best_citation
+        }
 
-            state["status"] = "partially_verified"
+    return {
+        "record": None,
+        "score": best_score,
+        "matched_citation": best_citation
+    }
 
-        elif verified:
 
-            state["status"] = "verified"
-
-        elif rejected:
-
-            state["status"] = "rejected"
-
-        else:
-
-            state["status"] = "no_citations"
-
-        return state
-
-    except Exception as e:
-
-        state.setdefault(
-            "errors",
-            []
-        ).append(
-            f"Verification error: {str(e)}"
-        )
-
-        state["status"] = "verification_failed"
-
-        return state
-
+# ============================================================
+# Single Citation Verification
+# ============================================================
 
 def verify_citation(
     citation: str,
-    registry_path: str | Path | None = None
+    truth_registry: List[Dict[str, Any]],
+    threshold: int = FUZZY_THRESHOLD
 ) -> Dict[str, Any]:
 
-    verified, rejected = verify_citations(
-        [citation],
-        registry_path=registry_path
+    normalized_candidate = normalize_citation(
+        citation
     )
 
-    if verified:
-        return verified[0]
+    normalized_registry = build_normalized_registry(
+        truth_registry
+    )
+
+    # --------------------------------------------------------
+    # 1. Exact Match
+    # --------------------------------------------------------
+
+    if normalized_candidate in normalized_registry:
+
+        record = normalized_registry[
+            normalized_candidate
+        ]
+
+        return {
+            "citation": citation,
+            "verified": True,
+            "match_type": "exact",
+            "match_score": 100,
+            "matched_citation": record.get(
+                "citation"
+            ),
+            "citation_reason": (
+                "Exact citation match found "
+                "in the Truth Registry."
+            ),
+            "source": record.get("source"),
+            "record": record
+        }
+
+    # --------------------------------------------------------
+    # 2. Fuzzy Match
+    # --------------------------------------------------------
+
+    fuzzy_result = find_fuzzy_match(
+        citation,
+        truth_registry,
+        threshold
+    )
+
+    if fuzzy_result["record"]:
+
+        record = fuzzy_result["record"]
+
+        return {
+            "citation": citation,
+            "verified": True,
+            "match_type": "fuzzy",
+            "match_score": fuzzy_result["score"],
+            "matched_citation": fuzzy_result[
+                "matched_citation"
+            ],
+            "citation_reason": (
+                "Citation formatting differs from "
+                "the Truth Registry, but the citation "
+                "matches above the verification threshold."
+            ),
+            "source": record.get("source"),
+            "record": record
+        }
+
+    # --------------------------------------------------------
+    # 3. Rejected
+    # --------------------------------------------------------
 
     return {
         "citation": citation,
         "verified": False,
-        "reason": "Citation not found in Truth Registry"
+        "match_type": "none",
+        "match_score": fuzzy_result["score"],
+        "matched_citation": fuzzy_result[
+            "matched_citation"
+        ],
+        "citation_reason": (
+            "Citation was not found in the Truth Registry "
+            "and did not meet the fuzzy matching threshold."
+        ),
+        "source": None,
+        "record": None
     }
 
 
-if __name__ == "__main__":
+# ============================================================
+# Multiple Citation Verification
+# ============================================================
 
-    print("=" * 60)
-    print("LexVerify AI - Truth Gate Test")
-    print("=" * 60)
+def verify_citations(
+    candidate_citations: List[str],
+    truth_registry: List[Dict[str, Any]],
+    threshold: int = FUZZY_THRESHOLD
+):
+    """
+    Verify all candidate citations.
 
-    test_citations = [
-        "PLD 2022 SC 764",
-        "2018 YLR 323",
-        "PLD 2025 SC 999"
-    ]
+    Returns:
 
-    for citation in test_citations:
+    verified
+    rejected
+    verification_results
+    """
 
-        result = verify_citation(citation)
+    verified = []
+    rejected = []
+    verification_results = []
 
-        print(f"\nCitation: {citation}")
-        print(f"Verified: {result['verified']}")
+    for citation in candidate_citations:
+
+        result = verify_citation(
+            citation,
+            truth_registry,
+            threshold
+        )
+
+        verification_results.append(
+            result
+        )
 
         if result["verified"]:
-
-            print(
-                f"Case: {result.get('case_name')}"
-            )
-
-            print(
-                f"Court: {result.get('court')}"
-            )
-
+            verified.append(result)
         else:
+            rejected.append(citation)
 
-            print(
-                f"Reason: {result.get('reason')}"
+    return (
+        verified,
+        rejected,
+        verification_results
+    )
+
+
+# ============================================================
+# Agent Integration
+# ============================================================
+
+def run_verification(
+    state: Dict[str, Any],
+    truth_registry: Optional[Any] = None,
+    registry_path: str = "data/truth_registry.json",
+) -> Dict[str, Any]:
+    """
+    Run deterministic citation verification.
+
+    Backward compatibility:
+    1. run_verification(state)
+       -> loads the existing V1 JSON registry.
+
+    2. run_verification(state, registry_path="...")
+       -> loads registry from the supplied path.
+
+    3. run_verification(state, truth_registry)
+       -> directly uses a V2 list-style registry.
+
+    The existing V1 dictionary-style registry is converted internally
+    into the V2 list-style representation.
+    """
+
+    try:
+        # ---------------------------------------------------------
+        # 1. Resolve registry
+        # ---------------------------------------------------------
+        if truth_registry is None:
+            with open(registry_path, "r", encoding="utf-8") as f:
+                truth_registry = json.load(f)
+
+        # ---------------------------------------------------------
+        # 2. Convert V1 dict registry -> V2 list registry
+        # ---------------------------------------------------------
+        if isinstance(truth_registry, dict):
+            normalized_registry = []
+
+            for citation, metadata in truth_registry.items():
+                record = {
+                    "citation": citation,
+                    **metadata,
+                }
+                normalized_registry.append(record)
+
+            truth_registry = normalized_registry
+
+        # ---------------------------------------------------------
+        # 3. Validate registry format
+        # ---------------------------------------------------------
+        if not isinstance(truth_registry, list):
+            raise TypeError(
+                "Truth registry must be either a list or a dictionary."
             )
 
-    print("\n" + "=" * 60)
+        # ---------------------------------------------------------
+        # 4. Get candidate citations from state
+        # ---------------------------------------------------------
+        candidate_citations = state.get("candidate_citations", [])
+
+        # ---------------------------------------------------------
+        # 5. Verify citations deterministically
+        # ---------------------------------------------------------
+        verified, rejected, verification_results = verify_citations(
+            candidate_citations,
+            truth_registry,
+            threshold=FUZZY_THRESHOLD,
+        )
+
+        # ---------------------------------------------------------
+        # 6. Store V2 outputs
+        # ---------------------------------------------------------
+        state["verified_citations"] = verified
+        state["rejected_citations"] = rejected
+        state["verification_results"] = verification_results
+
+        state["metrics_summary"] = {
+            "total_citations": len(candidate_citations),
+            "verified_count": len(verified),
+            "rejected_count": len(rejected),
+        }
+
+        state["status"] = "verification_completed"
+
+        return state
+
+    except Exception as e:
+        state["status"] = "verification_failed"
+
+        state.setdefault("errors", []).append(
+            {
+                "stage": "verification",
+                "error": str(e),
+            }
+        )
+
+        return state

@@ -23,57 +23,13 @@ from reportlab.platypus import (
 )
 
 
-def sanitize_pipeline_state(state):
-    """
-    Strips raw HTML tags, breaks, and code block wrappers from pipeline output data
-    before sending it to UI components.
-    """
-    if not state:
-        return state
-
-    def clean_text(val):
-        if not isinstance(val, str):
-            return val
-        # Strip code block wrappers and raw HTML tags
-        clean = re.sub(r'```[a-zA-Z]*', '', val)
-        clean = re.sub(r'<[^>]*>', ' ', clean)
-        clean = re.sub(r'\s+', ' ', clean)
-        return clean.strip()
-
-    # Sanitize verified citations
-    if "verified_citations" in state and isinstance(state["verified_citations"], list):
-        cleaned_verified = []
-        for item in state["verified_citations"]:
-            if isinstance(item, dict):
-                cleaned_verified.append({
-                    "citation": clean_text(item.get("citation", "")),
-                    "case_name": clean_text(item.get("case_name", item.get("title", ""))),
-                    "court": clean_text(item.get("court", "")),
-                    "year": clean_text(item.get("year", "")),
-                    "source": clean_text(item.get("source", ""))
-                })
-            elif isinstance(item, str):
-                cleaned_str = clean_text(item)
-                if cleaned_str:
-                    cleaned_verified.append(cleaned_str)
-        state["verified_citations"] = cleaned_verified
-
-    # Sanitize rejected citations
-    if "rejected_citations" in state and isinstance(state["rejected_citations"], list):
-        cleaned_rejected = []
-        for item in state["rejected_citations"]:
-            if isinstance(item, dict):
-                cleaned_rejected.append({
-                    "citation": clean_text(item.get("citation", "")),
-                    "reason": clean_text(item.get("reason", "Citation could not be verified."))
-                })
-            elif isinstance(item, str):
-                cleaned_str = clean_text(item)
-                if cleaned_str:
-                    cleaned_rejected.append(cleaned_str)
-        state["rejected_citations"] = cleaned_rejected
-
-    return state
+def clean_ui_text(text):
+    """Safely strips code block wrappers and raw HTML tags for clean UI display."""
+    if not isinstance(text, str):
+        return str(text) if text is not None else ""
+    cleaned = re.sub(r'```[a-zA-Z]*', '', text)
+    cleaned = cleaned.replace('```', '')
+    return cleaned.strip()
 
 
 # =========================================================
@@ -109,161 +65,886 @@ st.set_page_config(
 
 
 # =========================================================
-# PREVIOUS LEXVERIFY-STYLE CSS
+# LEXVERIFY AI — LOVABLE-INSPIRED DESIGN SYSTEM
 # =========================================================
 
 st.markdown(
-    """
-    <style>
+"""
+<style>
 
-    /* -----------------------------------------------------
-       GLOBAL
-    ----------------------------------------------------- */
+/* =====================================================
+   GOOGLE FONTS
+   ===================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap');
+
+
+/* =====================================================
+   DESIGN TOKENS
+   ===================================================== */
+
+:root {
+    --lv-navy: #111827;
+    --lv-navy-2: #172033;
+    --lv-navy-3: #202B3F;
+
+    --lv-gold: #C5A46D;
+    --lv-gold-dark: #A98750;
+    --lv-gold-soft: #F4ECDF;
+
+    --lv-cream: #F8F7F4;
+    --lv-white: #FFFFFF;
+
+    --lv-text: #172033;
+    --lv-text-soft: #596273;
+    --lv-text-muted: #7A8391;
+
+    --lv-border: #E5E1D9;
+    --lv-border-dark: #D8D2C7;
+
+    --lv-green: #2F7D5A;
+    --lv-green-soft: #ECF7F1;
+
+    --lv-red: #B64B4B;
+    --lv-red-soft: #FBEFEF;
+
+    --lv-blue: #4C6FFF;
+    --lv-blue-soft: #EEF2FF;
+
+    --lv-shadow:
+        0 8px 30px rgba(17, 24, 39, 0.055);
+
+    --lv-shadow-hover:
+        0 14px 35px rgba(17, 24, 39, 0.09);
+}
+
+
+/* =====================================================
+   GLOBAL
+   ===================================================== */
+
+html,
+body,
+[class*="css"] {
+    font-family:
+        'DM Sans',
+        'Inter',
+        Arial,
+        sans-serif;
+}
+
+.stApp {
+    background: var(--lv-cream);
+    color: var(--lv-text);
+}
+
+.main {
+    background: var(--lv-cream);
+}
+
+.block-container {
+    max-width: 1280px;
+    padding-top: 1.25rem;
+    padding-bottom: 2.5rem;
+}
+
+
+/* =====================================================
+   REMOVE STREAMLIT DEFAULT TOP SPACE
+   ===================================================== */
+
+[data-testid="stAppViewContainer"] > .main {
+    background: var(--lv-cream);
+}
+
+[data-testid="stHeader"] {
+    background: transparent;
+}
+
+
+/* =====================================================
+   TYPOGRAPHY
+   ===================================================== */
+
+h1,
+h2,
+h3,
+h4 {
+    font-family:
+        'Playfair Display',
+        Georgia,
+        serif !important;
+
+    color: var(--lv-navy) !important;
+}
+
+h1 {
+    font-size: 2.45rem !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.025em !important;
+}
+
+h2 {
+    font-size: 1.75rem !important;
+    font-weight: 600 !important;
+}
+
+h3 {
+    font-size: 1.35rem !important;
+    font-weight: 600 !important;
+}
+
+p,
+li,
+label,
+span {
+    font-family:
+        'DM Sans',
+        'Inter',
+        Arial,
+        sans-serif;
+}
+
+.stMarkdown {
+    color: var(--lv-text);
+}
+
+
+/* =====================================================
+   HERO
+   ===================================================== */
+
+.lv-hero {
+    position: relative;
+
+    overflow: hidden;
+
+    background:
+        radial-gradient(
+            circle at 90% 15%,
+            rgba(197,164,109,0.16),
+            transparent 30%
+        ),
+        linear-gradient(
+            135deg,
+            #111827 0%,
+            #172033 58%,
+            #202B3F 100%
+        );
+
+    border: 1px solid rgba(197,164,109,0.25);
+
+    border-radius: 18px;
+
+    padding: 48px 52px;
+
+    margin: 8px 0 28px 0;
+
+    box-shadow:
+        0 18px 45px rgba(17,24,39,0.12);
+}
+
+.lv-hero::before {
+    content: "";
+
+    position: absolute;
+
+    width: 220px;
+    height: 220px;
+
+    right: -75px;
+    top: -85px;
+
+    border-radius: 50%;
+
+    border: 1px solid rgba(197,164,109,0.20);
+}
+
+.lv-hero::after {
+    content: "";
+
+    position: absolute;
+
+    width: 130px;
+    height: 130px;
+
+    right: 35px;
+    bottom: -80px;
+
+    border-radius: 50%;
+
+    border: 1px solid rgba(197,164,109,0.13);
+}
+
+.lv-hero-kicker {
+    position: relative;
+
+    color: #D5B985;
+
+    font-size: 11px;
+
+    font-weight: 700;
+
+    letter-spacing: 3px;
+
+    text-transform: uppercase;
+
+    margin-bottom: 13px;
+}
+
+.lv-hero-title {
+    position: relative;
+
+    font-family:
+        'Playfair Display',
+        Georgia,
+        serif;
+
+    color: #FFFFFF;
+
+    font-size: clamp(40px, 5vw, 62px);
+
+    line-height: 1.05;
+
+    font-weight: 600;
+
+    letter-spacing: -1.5px;
+
+    margin-bottom: 16px;
+}
+
+.lv-hero-title span {
+    color: #D5B985;
+}
+
+.lv-hero-description {
+    position: relative;
+
+    max-width: 760px;
+
+    color: #C9D0DA;
+
+    font-size: 15px;
+
+    line-height: 1.75;
+}
+
+.lv-hero-rule {
+    position: relative;
+
+    width: 70px;
+    height: 2px;
+
+    margin-top: 24px;
+
+    background:
+        linear-gradient(
+            90deg,
+            #C5A46D,
+            rgba(197,164,109,0.25)
+        );
+}
+
+
+/* =====================================================
+   SECTION HEADINGS
+   ===================================================== */
+
+.section-title {
+    font-family:
+        'Playfair Display',
+        Georgia,
+        serif;
+
+    color: var(--lv-navy);
+
+    font-size: 25px;
+
+    line-height: 1.3;
+
+    font-weight: 600;
+
+    margin-top: 12px;
+    margin-bottom: 4px;
+}
+
+.section-description {
+    color: var(--lv-text-soft);
+
+    font-size: 13px;
+
+    line-height: 1.65;
+
+    margin-bottom: 15px;
+}
+
+
+/* =====================================================
+   NATIVE STREAMLIT METRIC CARDS
+   ===================================================== */
+
+[data-testid="stMetric"] {
+    position: relative;
+
+    background: var(--lv-white);
+
+    border: 1px solid var(--lv-border);
+
+    border-radius: 14px;
+
+    padding: 18px 19px 17px 19px;
+
+    min-height: 105px;
+
+    box-shadow: var(--lv-shadow);
+
+    transition:
+        transform 0.18s ease,
+        box-shadow 0.18s ease,
+        border-color 0.18s ease;
+}
+
+[data-testid="stMetric"]:hover {
+    transform: translateY(-2px);
+
+    border-color: rgba(197,164,109,0.55);
+
+    box-shadow: var(--lv-shadow-hover);
+}
+
+[data-testid="stMetric"]::before {
+    content: "";
+
+    position: absolute;
+
+    left: 0;
+    top: 14px;
+    bottom: 14px;
+
+    width: 3px;
+
+    border-radius: 0 3px 3px 0;
+
+    background: var(--lv-gold);
+}
+
+[data-testid="stMetricLabel"] {
+    color: var(--lv-text-soft) !important;
+
+    font-size: 12px !important;
+
+    font-weight: 600 !important;
+
+    letter-spacing: 0.1px;
+}
+
+[data-testid="stMetricValue"] {
+    color: var(--lv-navy) !important;
+
+    font-family:
+        'Playfair Display',
+        Georgia,
+        serif !important;
+
+    font-size: 29px !important;
+
+    font-weight: 600 !important;
+}
+
+[data-testid="stMetricDelta"] {
+    font-size: 11px !important;
+
+    font-weight: 600 !important;
+}
+
+
+/* =====================================================
+   CUSTOM METRIC CARDS
+   ===================================================== */
+
+.metric-card {
+    background: var(--lv-white);
+
+    border: 1px solid var(--lv-border);
+
+    border-radius: 14px;
+
+    min-height: 102px;
+
+    padding: 17px 16px;
+
+    text-align: center;
+
+    box-shadow: var(--lv-shadow);
+
+    transition:
+        transform 0.18s ease,
+        box-shadow 0.18s ease,
+        border-color 0.18s ease;
+}
+
+.metric-card:hover {
+    transform: translateY(-2px);
+
+    border-color: rgba(197,164,109,0.55);
+
+    box-shadow: var(--lv-shadow-hover);
+}
+
+.metric-value {
+    color: var(--lv-navy);
+
+    font-family:
+        'Playfair Display',
+        Georgia,
+        serif;
+
+    font-size: 26px;
+
+    font-weight: 600;
+
+    line-height: 1.2;
+}
+
+.metric-label {
+    color: var(--lv-text-muted);
+
+    font-size: 10px;
+
+    font-weight: 700;
+
+    letter-spacing: 0.7px;
+
+    text-transform: uppercase;
+
+    margin-top: 7px;
+}
+
+
+/* =====================================================
+   BUTTONS
+   ===================================================== */
+
+.stButton > button,
+.stFormSubmitButton > button,
+[data-testid="stDownloadButton"] > button {
+    min-height: 42px;
+
+    border-radius: 9px !important;
+
+    border: 1px solid var(--lv-border-dark) !important;
+
+    background: var(--lv-white) !important;
+
+    color: var(--lv-navy) !important;
+
+    font-family:
+        'DM Sans',
+        'Inter',
+        sans-serif !important;
+
+    font-size: 13px !important;
+
+    font-weight: 600 !important;
+
+    transition:
+        background 0.18s ease,
+        border-color 0.18s ease,
+        color 0.18s ease,
+        transform 0.18s ease,
+        box-shadow 0.18s ease;
+}
+
+.stButton > button:hover,
+[data-testid="stDownloadButton"] > button:hover {
+    background: var(--lv-gold-soft) !important;
+
+    border-color: var(--lv-gold) !important;
+
+    color: var(--lv-navy) !important;
+
+    transform: translateY(-1px);
+
+    box-shadow:
+        0 6px 16px rgba(17,24,39,0.07);
+}
+
+
+/* PRIMARY BUTTON */
+
+button[kind="primary"],
+.stFormSubmitButton > button[kind="primary"],
+[data-testid="stDownloadButton"] button[kind="primary"] {
+    background:
+        linear-gradient(
+            135deg,
+            #B58F57 0%,
+            #C5A46D 50%,
+            #D0B47F 100%
+        ) !important;
+
+    border: 1px solid #A98750 !important;
+
+    color: #FFFFFF !important;
+
+    box-shadow:
+        0 7px 18px rgba(169,135,80,0.22);
+}
+
+button[kind="primary"]:hover,
+.stFormSubmitButton > button[kind="primary"]:hover,
+[data-testid="stDownloadButton"] button[kind="primary"]:hover {
+    background:
+        linear-gradient(
+            135deg,
+            #A98750 0%,
+            #B89760 50%,
+            #C5A46D 100%
+        ) !important;
+
+    color: #FFFFFF !important;
+
+    border-color: #9C7946 !important;
+
+    transform: translateY(-1px);
+
+    box-shadow:
+        0 9px 22px rgba(169,135,80,0.28);
+}
+
+
+/* =====================================================
+   QUERY INPUT
+   ===================================================== */
+
+[data-testid="stTextInput"] {
+    margin-top: 4px;
+}
+
+[data-testid="stTextInput"] input {
+    min-height: 48px;
+
+    background: var(--lv-white) !important;
+
+    color: var(--lv-navy) !important;
+
+    border: 1px solid var(--lv-border-dark) !important;
+
+    border-radius: 10px !important;
+
+    font-family:
+        'DM Sans',
+        'Inter',
+        sans-serif !important;
+
+    font-size: 13px !important;
+
+    box-shadow:
+        0 3px 12px rgba(17,24,39,0.025);
+}
+
+[data-testid="stTextInput"] input::placeholder {
+    color: #969DA8 !important;
+}
+
+[data-testid="stTextInput"] input:focus {
+    border-color: var(--lv-gold) !important;
+
+    box-shadow:
+        0 0 0 1px var(--lv-gold),
+        0 4px 14px rgba(17,24,39,0.05) !important;
+}
+
+
+/* =====================================================
+   TABS
+   ===================================================== */
+
+[data-testid="stTabs"] {
+    margin-top: 6px;
+}
+
+[data-testid="stTabs"] [role="tablist"] {
+    gap: 4px;
+
+    border-bottom: 1px solid var(--lv-border);
+}
+
+[data-testid="stTabs"] [role="tab"] {
+    color: var(--lv-text-muted);
+
+    font-family:
+        'DM Sans',
+        'Inter',
+        sans-serif;
+
+    font-size: 12px;
+
+    font-weight: 600;
+
+    padding: 12px 15px;
+
+    border-radius: 7px 7px 0 0;
+}
+
+[data-testid="stTabs"] [role="tab"]:hover {
+    color: var(--lv-navy);
+
+    background: rgba(197,164,109,0.07);
+}
+
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+    color: var(--lv-navy);
+
+    background: transparent;
+}
+
+[data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+    background: var(--lv-gold) !important;
+
+    height: 2px !important;
+}
+
+
+/* =====================================================
+   CONTAINERS / CARDS
+   ===================================================== */
+
+[data-testid="stVerticalBlockBorderWrapper"] {
+    background: var(--lv-white) !important;
+
+    border:
+        1px solid var(--lv-border) !important;
+
+    border-radius: 13px !important;
+
+    box-shadow:
+        0 5px 18px rgba(17,24,39,0.045);
+}
+
+
+/* =====================================================
+   EXPANDERS
+   ===================================================== */
+
+[data-testid="stExpander"] {
+    background: var(--lv-white);
+
+    border:
+        1px solid var(--lv-border) !important;
+
+    border-radius: 10px !important;
+
+    box-shadow:
+        0 4px 14px rgba(17,24,39,0.035);
+
+    overflow: hidden;
+}
+
+[data-testid="stExpander"] summary {
+    color: var(--lv-navy) !important;
+
+    font-weight: 600 !important;
+
+    font-size: 13px !important;
+}
+
+[data-testid="stExpander"] summary:hover {
+    background: var(--lv-gold-soft);
+}
+
+
+/* =====================================================
+   CODE / SOURCE TRACE
+   ===================================================== */
+
+[data-testid="stCodeBlock"] {
+    border-radius: 9px !important;
+
+    border:
+        1px solid #E1DDD5 !important;
+}
+
+
+/* =====================================================
+   ALERTS
+   ===================================================== */
+
+[data-testid="stAlert"] {
+    border-radius: 10px !important;
+
+    font-size: 13px;
+}
+
+
+/* =====================================================
+   INFO BOX
+   ===================================================== */
+
+[data-testid="stAlert"][kind="info"] {
+    background: var(--lv-blue-soft);
+}
+
+
+/* =====================================================
+   DIVIDERS
+   ===================================================== */
+
+hr {
+    border-color: var(--lv-border) !important;
+
+    margin-top: 24px !important;
+
+    margin-bottom: 24px !important;
+}
+
+
+/* =====================================================
+   SIDEBAR
+   ===================================================== */
+
+[data-testid="stSidebar"] {
+    background:
+        linear-gradient(
+            180deg,
+            #111827 0%,
+            #151D2C 100%
+        ) !important;
+
+    border-right:
+        1px solid rgba(197,164,109,0.18);
+}
+
+[data-testid="stSidebar"] > div:first-child {
+    padding-top: 1.25rem;
+}
+
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    font-family:
+        'Playfair Display',
+        Georgia,
+        serif !important;
+
+    color: #FFFFFF !important;
+}
+
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] li,
+[data-testid="stSidebar"] label {
+    color: #C8CED8 !important;
+
+    font-size: 12px;
+}
+
+[data-testid="stSidebar"] strong {
+    color: #E0C899 !important;
+}
+
+[data-testid="stSidebar"] hr {
+    border-color:
+        rgba(255,255,255,0.10) !important;
+}
+
+[data-testid="stSidebar"] .stButton > button {
+    background:
+        rgba(255,255,255,0.055) !important;
+
+    color: #E3E7ED !important;
+
+    border:
+        1px solid rgba(255,255,255,0.10) !important;
+
+    border-radius: 8px !important;
+
+    box-shadow: none !important;
+}
+
+[data-testid="stSidebar"] .stButton > button:hover {
+    background:
+        rgba(197,164,109,0.14) !important;
+
+    color: #F3D7A4 !important;
+
+    border-color:
+        rgba(197,164,109,0.45) !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+    color: #8D97A7 !important;
+}
+
+
+/* =====================================================
+   SPINNER
+   ===================================================== */
+
+[data-testid="stSpinner"] {
+    color: var(--lv-gold) !important;
+}
+
+
+/* =====================================================
+   FOOTER
+   ===================================================== */
+
+.footer-text {
+    text-align: center;
+
+    color: #7F8793;
+
+    font-size: 11px;
+
+    line-height: 1.6;
+
+    padding:
+        4px 10px 10px 10px;
+}
+
+
+/* =====================================================
+   RESPONSIVE
+   ===================================================== */
+
+@media (max-width: 900px) {
 
     .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-        max-width: 1400px;
+        padding-left: 1rem;
+        padding-right: 1rem;
     }
 
-    /* -----------------------------------------------------
-       HEADER
-    ----------------------------------------------------- */
-
-    .main-title {
-        font-size: 42px;
-        font-weight: 800;
-        letter-spacing: -1px;
-        margin-bottom: 2px;
+    .lv-hero {
+        padding: 36px 30px;
     }
 
-    .subtitle {
-        font-size: 18px;
-        color: #6b7280;
-        margin-bottom: 28px;
+    .lv-hero-title {
+        font-size: 43px;
+    }
+}
+
+@media (max-width: 600px) {
+
+    .lv-hero {
+        padding: 30px 23px;
     }
 
-    /* -----------------------------------------------------
-       SECTION TITLES
-    ----------------------------------------------------- */
-
-    .section-title {
-        font-size: 25px;
-        font-weight: 700;
-        margin-top: 10px;
-        margin-bottom: 4px;
+    .lv-hero-title {
+        font-size: 37px;
     }
 
-    .section-description {
-        color: #6b7280;
-        font-size: 15px;
-        margin-bottom: 18px;
-    }
-
-    /* -----------------------------------------------------
-       METRIC CARDS
-    ----------------------------------------------------- */
-
-    .metric-card {
-        padding: 18px;
-        border-radius: 12px;
-        border: 1px solid #e5e7eb;
-        background: #ffffff;
-        text-align: center;
-        min-height: 105px;
-        margin-bottom: 10px;
-    }
-
-    .metric-value {
-        font-size: 28px;
-        font-weight: 750;
-    }
-
-    .metric-label {
+    .lv-hero-description {
         font-size: 13px;
-        color: #6b7280;
-        margin-top: 4px;
     }
 
-    /* -----------------------------------------------------
-       STATUS CARDS
-    ----------------------------------------------------- */
-
-    .status-card {
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #e5e7eb;
-        background: #ffffff;
-        margin-bottom: 8px;
-        text-align: center;
+    [data-testid="stMetric"] {
+        min-height: 95px;
     }
+}
 
-    .status-completed {
-        border-left: 5px solid #28a745;
-        background: #f3fff5;
-    }
-
-    .status-failed {
-        border-left: 5px solid #dc3545;
-        background: #fff5f5;
-    }
-
-    .status-pending {
-        border-left: 5px solid #9ca3af;
-        background: #f9fafb;
-    }
-
-    .status-name {
-        font-size: 14px;
-        font-weight: 700;
-    }
-
-    .status-value {
-        font-size: 13px;
-        margin-top: 5px;
-    }
-
-    /* -----------------------------------------------------
-       EVIDENCE
-    ----------------------------------------------------- */
-
-    .evidence-intro {
-        color: #6b7280;
-        margin-bottom: 12px;
-    }
-
-    /* -----------------------------------------------------
-       SIDEBAR
-    ----------------------------------------------------- */
-
-    [data-testid="stSidebar"] {
-        border-right: 1px solid #e5e7eb;
-    }
-
-    /* -----------------------------------------------------
-       BUTTONS
-    ----------------------------------------------------- */
-
-    .stButton > button {
-        border-radius: 8px;
-        font-weight: 600;
-    }
-
-    /* -----------------------------------------------------
-       FOOTER
-    ----------------------------------------------------- */
-
-    .footer-text {
-        text-align: center;
-        color: #9ca3af;
-        font-size: 12px;
-        padding-top: 10px;
-        padding-bottom: 10px;
-    }
-
-    </style>
-    """,
-    unsafe_allow_html=True,
+</style>
+""",
+unsafe_allow_html=True,
 )
 
 
@@ -278,63 +959,39 @@ def render_engine_metrics():
 
     with col1:
         st.markdown(
-            """
-            <div class="metric-card">
-                <div class="metric-value">4</div>
-                <div class="metric-label">AI Agents</div>
-            </div>
-            """,
+            '<div class="metric-card"><div class="metric-value">4</div><div class="metric-label">AI Agents</div></div>',
             unsafe_allow_html=True,
         )
 
     with col2:
         st.markdown(
-            """
-            <div class="metric-card">
-                <div class="metric-value">FAISS</div>
-                <div class="metric-label">Vector Retrieval</div>
-            </div>
-            """,
+            '<div class="metric-card"><div class="metric-value">FAISS</div><div class="metric-label">Vector Retrieval</div></div>',
             unsafe_allow_html=True,
         )
 
     with col3:
         st.markdown(
-            """
-            <div class="metric-card">
-                <div class="metric-value">Truth</div>
-                <div class="metric-label">Citation Registry</div>
-            </div>
-            """,
+            '<div class="metric-card"><div class="metric-value">Truth</div><div class="metric-label">Citation Registry</div></div>',
             unsafe_allow_html=True,
         )
 
     with col4:
         st.markdown(
-            """
-            <div class="metric-card">
-                <div class="metric-value">PDF</div>
-                <div class="metric-label">Verified Reports</div>
-            </div>
-            """,
+            '<div class="metric-card"><div class="metric-value">PDF</div><div class="metric-label">Verified Reports</div></div>',
             unsafe_allow_html=True,
         )
 
 
 def render_header():
-    """Render the previous LexVerify header."""
+    """Render the LexVerify legal intelligence hero."""
+
+    # IMPORTANT:
+    # The HTML below intentionally has no indentation.
+    # This prevents Streamlit Markdown from interpreting
+    # the HTML as a code block.
 
     st.markdown(
-        '<div class="main-title">⚖️ LexVerify AI</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        """
-        <div class="subtitle">
-            Research. Retrieve. Verify. Respond.
-        </div>
-        """,
+"""<div class="lv-hero"><div class="lv-hero-kicker">CITATION-GROUNDED LEGAL INTELLIGENCE</div><div class="lv-hero-title">⚖️ LexVerify <span>AI</span></div><div class="lv-hero-description">Eliminating AI hallucinations in Pakistani jurisprudence. Research, retrieve, verify, and respond using evidence-grounded legal intelligence.</div><div class="lv-hero-rule"></div></div>""",
         unsafe_allow_html=True,
     )
 
@@ -355,17 +1012,11 @@ def render_agent_status(status):
     """Render the four-agent workflow."""
 
     st.markdown(
-        '<div class="section-title">🤖 Agent Workflow</div>',
-        unsafe_allow_html=True,
+        "### 🤖 Agent Workflow"
     )
 
-    st.markdown(
-        """
-        <div class="section-description">
-            Track the Research → Retrieval → Verification → Synthesis pipeline.
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.caption(
+        "Track the Research → Retrieval → Verification → Synthesis pipeline."
     )
 
     agents = [
@@ -385,109 +1036,47 @@ def render_agent_status(status):
         )
 
         if current_status == "completed":
-
-            css_class = "status-completed"
-            icon = "✓"
+            icon="✅"
             label = "Completed"
-
         elif current_status == "failed":
-
-            css_class = "status-failed"
-            icon = "✗"
+            icon = "❌"
             label = "Failed"
-
         else:
-
-            css_class = "status-pending"
             icon = "•"
             label = "Pending"
 
         with column:
 
-            st.markdown(
-                f"""
-                <div class="status-card {css_class}">
-                    <div class="status-name">
-                        {escape(name)}
-                    </div>
-                    <div class="status-value">
-                        {icon} {label}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            with st.container(border=True):
 
+                st.markdown(
+                    f"**{icon} {name}**"
+                )
 
-def render_verification_summary(
-    verified_count,
-    rejected_count,
-    evidence_count,
-):
-    """Render verification summary cards."""
+                if current_status == "completed":
+                    st.success(
+                        label,
+                        icon="✅",
+                    )
 
-    st.markdown(
-        '<div class="section-title">🔐 Verification Summary</div>',
-        unsafe_allow_html=True,
-    )
+                elif current_status == "failed":
+                    st.error(
+                        label,
+                        icon="❌",
+                    )
 
-    columns = st.columns(3)
-
-    with columns[0]:
-
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-value">
-                    {verified_count}
-                </div>
-                <div class="metric-label">
-                    ✓ Verified Citations
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with columns[1]:
-
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-value">
-                    {rejected_count}
-                </div>
-                <div class="metric-label">
-                    ✗ Rejected Citations
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with columns[2]:
-
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-value">
-                    {evidence_count}
-                </div>
-                <div class="metric-label">
-                    📚 Evidence Chunks
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+                else:
+                    st.info(
+                        label,
+                        icon="•",
+                    )
 
 
 def render_response_panel(state):
-    """Render the final answer in native Streamlit Markdown card style."""
+    """Render the final answer inside a clean native container supporting markdown."""
 
     st.markdown(
-        '<div class="section-title">🧠 Research Response</div>',
-        unsafe_allow_html=True,
+        "### 🧠 Research Response"
     )
 
     final_answer = state.get(
@@ -496,9 +1085,21 @@ def render_response_panel(state):
     )
 
     if final_answer and final_answer.strip():
+
+        cleaned_answer = clean_ui_text(str(final_answer))
+
         with st.container(border=True):
-            st.markdown(final_answer.strip())
+
+            st.markdown(
+                "#### Legal Research Brief"
+            )
+
+            st.markdown(
+                cleaned_answer
+            )
+
     else:
+
         st.info(
             "No final answer was generated."
         )
@@ -551,7 +1152,7 @@ def create_groq_client():
         return None
 
     return OpenAI(
-        base_url="[https://api.groq.com/openai/v1](https://api.groq.com/openai/v1)",
+        base_url="https://api.groq.com/openai/v1",
         api_key=api_key,
     )
 
@@ -560,154 +1161,122 @@ def create_groq_client():
 # PDF GENERATION
 # =========================================================
 
-def create_pdf_report(
-    query,
-    state,
-    execution_time=None,
-):
-    """
-    Generate the verified LexVerify AI PDF report.
-    """
-
+def create_pdf_report(query, state, execution_time=None):
+    """Generate the verified LexVerify AI PDF report."""
     buffer = BytesIO()
-
     doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=40,
-        leftMargin=40,
-        topMargin=40,
-        bottomMargin=40,
+        buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40
     )
-
     styles = getSampleStyleSheet()
 
-    title_style = ParagraphStyle(
-        "LexVerifyTitle",
-        parent=styles["Title"],
-        alignment=TA_CENTER,
-        fontSize=22,
-        leading=26,
-        spaceAfter=15,
-    )
-
-    heading_style = ParagraphStyle(
-        "LexVerifyHeading",
-        parent=styles["Heading2"],
-        fontSize=14,
-        leading=18,
-        spaceBefore=12,
-        spaceAfter=8,
-    )
-
-    body_style = ParagraphStyle(
-        "LexVerifyBody",
-        parent=styles["BodyText"],
-        fontSize=9.5,
-        leading=14,
-        spaceAfter=8,
-    )
-
-    small_style = ParagraphStyle(
-        "LexVerifySmall",
-        parent=styles["BodyText"],
-        fontSize=8,
-        leading=11,
-        textColor=colors.grey,
-    )
+    title_style = ParagraphStyle("LexVerifyTitle", parent=styles["Title"], alignment=TA_CENTER, fontSize=22, leading=26, spaceAfter=15)
+    heading_style = ParagraphStyle("LexVerifyHeading", parent=styles["Heading2"], fontSize=14, leading=18, spaceBefore=12, spaceAfter=8)
+    body_style = ParagraphStyle("LexVerifyBody", parent=styles["BodyText"], fontSize=9.5, leading=14, spaceAfter=8)
+    small_style = ParagraphStyle("LexVerifySmall", parent=styles["BodyText"], fontSize=8, leading=11, textColor=colors.grey)
 
     story = []
+    story.append(Paragraph("LexVerify AI", title_style))
+    story.append(Paragraph("Research. Retrieve. Verify. Respond.", small_style))
+    story.append(Spacer(1, 15))
 
-    # -----------------------------------------------------
-    # TITLE
-    # -----------------------------------------------------
-
-    story.append(
-        Paragraph(
-            "LexVerify AI",
-            title_style,
-        )
-    )
-
-    story.append(
-        Paragraph(
-            "Research. Retrieve. Verify. Respond.",
-            small_style,
-        )
-    )
-
-    story.append(
-        Spacer(1, 15)
-    )
-
-    # -----------------------------------------------------
-    # QUERY
-    # -----------------------------------------------------
-
-    story.append(
-        Paragraph(
-            "Legal Query",
-            heading_style,
-        )
-    )
-
-    story.append(
-        Paragraph(
-            escape(str(query)),
-            body_style,
-        )
-    )
+    story.append(Paragraph("Legal Query", heading_style))
+    story.append(Paragraph(escape(str(query)), body_style))
 
     if execution_time is not None:
+        story.append(Paragraph(f"Execution Time: {execution_time:.2f} seconds", small_style))
+    
+    story.append(Spacer(1, 10))
 
-        story.append(
-            Paragraph(
-                f"Execution Time: "
-                f"{execution_time:.2f} seconds",
-                small_style,
-            )
-        )
-
-    story.append(
-        Spacer(1, 10)
-    )
-
-    # -----------------------------------------------------
-    # FINAL ANSWER
-    # -----------------------------------------------------
-
-    story.append(
-        Paragraph(
-            "Final Answer",
-            heading_style,
-        )
-    )
-
-    final_answer = state.get(
-        "final_answer",
-        "",
-    )
-
+    story.append(Paragraph("Final Answer", heading_style))
+    final_answer = state.get("final_answer", "")
     if not final_answer:
+        final_answer = "No final answer was generated because the verification pipeline did not produce sufficient verified evidence."
+    
+    # -------------------------------------------------------------
+    # NEW PDF MARKDOWN PARSER (Fixes bold/italic missing tags)
+    # -------------------------------------------------------------
+    cleaned_final_answer = clean_ui_text(str(final_answer))
+    safe_answer = escape(cleaned_final_answer)
+    safe_answer = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', safe_answer)
+    safe_answer = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', safe_answer)
+    safe_answer = safe_answer.replace("\n", "<br/>")
+    
+    story.append(Paragraph(safe_answer, body_style))
 
-        final_answer = (
-            "No final answer was generated because "
-            "the verification pipeline did not produce "
-            "sufficient verified evidence."
-        )
+    story.append(Paragraph("Verified Citations", heading_style))
+    verified_citations = state.get("verified_citations", [])
+    if verified_citations:
+        table_data = [[Paragraph("<b>Citation</b>", body_style), Paragraph("<b>Case</b>", body_style), Paragraph("<b>Court</b>", body_style), Paragraph("<b>Year</b>", body_style)]]
+        for item in verified_citations:
+            if not isinstance(item, dict): continue
+            
+            # -------------------------------------------------------------
+            # NEW PDF TABLE FALLBACK LOGIC (Fixes empty blank cells)
+            # -------------------------------------------------------------
+            citation = clean_ui_text(item.get("citation", "")) or "N/A"
+            case_name = clean_ui_text(item.get("case_name", item.get("title", ""))) or "N/A"
+            court = clean_ui_text(item.get("court", "")) or "N/A"
+            year = clean_ui_text(item.get("year", "")) or "N/A"
+            
+            table_data.append([
+                Paragraph(escape(str(citation)), body_style), 
+                Paragraph(escape(str(case_name)), body_style), 
+                Paragraph(escape(str(court)), body_style), 
+                Paragraph(escape(str(year)), body_style)
+            ])
 
-    safe_answer = (
-        escape(str(final_answer))
-        .replace("\n", "<br/>")
-    )
+        if len(table_data) > 1:
+            table = Table(table_data, colWidths=[95, 190, 100, 45], repeatRows=1)
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey), ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]))
+            story.append(table)
+        else:
+            story.append(Paragraph("No verified citations were available.", body_style))
+    else:
+        story.append(Paragraph("No verified citations were found.", body_style))
 
-    story.append(
-        Paragraph(
-            safe_answer,
-            body_style,
-        )
-    )
+    story.append(Paragraph("Rejected / Unverified Citations", heading_style))
+    rejected_citations = state.get("rejected_citations", [])
+    if rejected_citations:
+        for item in rejected_citations:
+            if isinstance(item, dict):
+                citation_text = item.get("citation", item.get("text", str(item)))
+            else:
+                citation_text = str(item)
+            cleaned_citation_text = clean_ui_text(str(citation_text))
+            story.append(Paragraph("REJECTED — " + escape(cleaned_citation_text), body_style))
+    else:
+        story.append(Paragraph("No rejected citations.", body_style))
 
+    story.append(Paragraph("Retrieved Evidence", heading_style))
+    evidence_chunks = state.get("retrieved_chunks", [])
+    if evidence_chunks:
+        for index, chunk in enumerate(evidence_chunks, start=1):
+            if not isinstance(chunk, dict): continue
+            source_file = chunk.get("source_file", chunk.get("source", "Unknown source"))
+            text = chunk.get("text", chunk.get("content", ""))
+            
+            # Apply markdown parsing to evidence chunks as well
+            safe_text = escape(clean_ui_text(str(text)))
+            safe_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', safe_text)
+            safe_text = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', safe_text)
+            safe_text = safe_text.replace("\n", "<br/>")
+
+            story.append(Paragraph(f"<b>Evidence {index}</b> — {escape(clean_ui_text(str(source_file)))}", body_style))
+            story.append(Paragraph(safe_text, body_style))
+    else:
+        story.append(Paragraph("No retrieved evidence was available.", body_style))
+
+    story.append(PageBreak())
+    story.append(Paragraph("Disclaimer", heading_style))
+    disclaimer = "LexVerify AI is a legal research assistance tool. It does not provide legal advice and should not be treated as a substitute for professional legal judgment. Citations and evidence shown in this report are limited to the application's verified corpus."
+    story.append(Paragraph(disclaimer, body_style))
+
+    doc.build(story)
+    return buffer.getvalue()
     # -----------------------------------------------------
     # VERIFIED CITATIONS
     # -----------------------------------------------------
@@ -749,16 +1318,13 @@ def create_pdf_report(
 
         for item in verified_citations:
 
-            if isinstance(item, dict):
-                citation = item.get("citation", "")
-                case_name = item.get("case_name", item.get("title", ""))
-                court = item.get("court", "")
-                year = item.get("year", "")
-            else:
-                citation = str(item)
-                case_name = "N/A"
-                court = "N/A"
-                year = "N/A"
+            if not isinstance(item, dict):
+                continue
+
+            citation = clean_ui_text(item.get("citation", ""))
+            case_name = clean_ui_text(item.get("case_name", item.get("title", "")))
+            court = clean_ui_text(item.get("court", ""))
+            year = clean_ui_text(item.get("year", ""))
 
             table_data.append(
                 [
@@ -885,17 +1451,25 @@ def create_pdf_report(
         for item in rejected_citations:
 
             if isinstance(item, dict):
+
                 citation_text = item.get(
                     "citation",
-                    item.get("text", str(item)),
+                    item.get(
+                        "text",
+                        str(item),
+                    ),
                 )
+
             else:
+
                 citation_text = str(item)
+
+            cleaned_citation_text = clean_ui_text(str(citation_text))
 
             story.append(
                 Paragraph(
                     "REJECTED — "
-                    + escape(str(citation_text)),
+                    + escape(cleaned_citation_text),
                     body_style,
                 )
             )
@@ -937,25 +1511,36 @@ def create_pdf_report(
 
             source_file = chunk.get(
                 "source_file",
-                chunk.get("source", "Unknown source"),
+                chunk.get(
+                    "source",
+                    "Unknown source",
+                ),
             )
 
             text = chunk.get(
                 "text",
-                chunk.get("content", ""),
+                chunk.get(
+                    "content",
+                    "",
+                ),
             )
 
             story.append(
                 Paragraph(
                     f"<b>Evidence {index}</b> — "
-                    f"{escape(str(source_file))}",
+                    f"{escape(clean_ui_text(str(source_file)))}",
                     body_style,
                 )
             )
 
             story.append(
                 Paragraph(
-                    escape(str(text)).replace("\n", "<br/>"),
+                    escape(
+                        clean_ui_text(str(text))
+                    ).replace(
+                        "\n",
+                        "<br/>",
+                    ),
                     body_style,
                 )
             )
@@ -1085,38 +1670,21 @@ with st.sidebar:
 # =========================================================
 
 if bail_button:
-
-    st.session_state.user_query = (
-        "What is the bail standard in non-bailable offenses?"
-    )
-
+    st.session_state.user_query = "What is the bail standard in non-bailable offenses?"
     st.session_state.pipeline_state = None
     st.session_state.execution_time = None
-
     st.rerun()
-
 
 if fake_button:
-
-    st.session_state.user_query = (
-        "Check precedent PLD 2025 SC 999"
-    )
-
+    st.session_state.user_query = "Check precedent PLD 2025 SC 999"
     st.session_state.pipeline_state = None
     st.session_state.execution_time = None
-
     st.rerun()
 
-
 if corpus_button:
-
-    st.session_state.user_query = (
-        "What are foreign maritime tax rates?"
-    )
-
+    st.session_state.user_query = "What are foreign maritime tax rates?"
     st.session_state.pipeline_state = None
     st.session_state.execution_time = None
-
     st.rerun()
 
 
@@ -1125,18 +1693,11 @@ if corpus_button:
 # =========================================================
 
 st.markdown(
-    '<div class="section-title">🔎 Ask a Legal Question</div>',
-    unsafe_allow_html=True,
+    "### 🔎 Ask a Legal Question"
 )
 
-st.markdown(
-    """
-    <div class="section-description">
-        Enter a Pakistani legal research question or try one
-        of the demo scenarios below.
-    </div>
-    """,
-    unsafe_allow_html=True,
+st.caption(
+    "Enter a Pakistani legal research question or try one of the demo scenarios below."
 )
 
 
@@ -1147,62 +1708,41 @@ st.markdown(
 col1, col2, col3 = st.columns(3)
 
 with col1:
-
     if st.button(
         "⚖️ Bail Standards",
         use_container_width=True,
         key="main_bail_demo",
     ):
-
-        st.session_state.user_query = (
-            "What is the bail standard in non-bailable offenses?"
-        )
-
+        st.session_state.user_query = "What is the bail standard in non-bailable offenses?"
         st.session_state.pipeline_state = None
         st.session_state.execution_time = None
-
         st.rerun()
 
-
 with col2:
-
     if st.button(
         "🔴 Fake Citation Test",
         use_container_width=True,
         key="main_fake_demo",
     ):
-
-        st.session_state.user_query = (
-            "Check precedent PLD 2025 SC 999"
-        )
-
+        st.session_state.user_query = "Check precedent PLD 2025 SC 999"
         st.session_state.pipeline_state = None
         st.session_state.execution_time = None
-
         st.rerun()
 
-
 with col3:
-
     if st.button(
         "🌐 Out-of-Corpus Query",
         use_container_width=True,
         key="main_corpus_demo",
     ):
-
-        st.session_state.user_query = (
-            "What are foreign maritime tax rates?"
-        )
-
+        st.session_state.user_query = "What are foreign maritime tax rates?"
         st.session_state.pipeline_state = None
         st.session_state.execution_time = None
-
         st.rerun()
 
 
 # =========================================================
 # QUERY FORM
-# ENTER KEY ALSO SUBMITS
 # =========================================================
 
 with st.form(
@@ -1213,10 +1753,7 @@ with st.form(
     user_question = st.text_input(
         "Enter your legal query:",
         value=st.session_state.user_query,
-        placeholder=(
-            "e.g. What is the bail standard in "
-            "non-bailable offenses?"
-        ),
+        placeholder="e.g. What is the bail standard in non-bailable offenses?",
         label_visibility="collapsed",
     )
 
@@ -1232,52 +1769,29 @@ with st.form(
 # =========================================================
 
 if search_clicked:
-
     submitted_query = user_question.strip()
-
     st.session_state.user_query = submitted_query
 
     if not submitted_query:
-
-        st.warning(
-            "Please enter a legal question first."
-        )
-
+        st.warning("Please enter a legal question first.")
     else:
-
-        # -------------------------------------------------
-        # CLEAR OLD RESULTS
-        # -------------------------------------------------
-
         st.session_state.pipeline_state = None
         st.session_state.execution_time = None
-
-        # -------------------------------------------------
-        # CLIENT
-        # -------------------------------------------------
 
         client = create_groq_client()
 
         if client is None:
-
             st.error(
-                "GROQ_API_KEY is not configured. "
-                "Please add it to Streamlit Secrets."
+                "GROQ_API_KEY is not configured. Please add it to Streamlit Secrets."
             )
-
             st.stop()
-
-        # -------------------------------------------------
-        # RUN
-        # -------------------------------------------------
 
         start_time = time.perf_counter()
 
         try:
 
             with st.spinner(
-                "Running Research → Retrieval → "
-                "Verification → Synthesis..."
+                "Running Research → Retrieval → Verification → Synthesis..."
             ):
 
                 state = run_lexverify_pipeline(
@@ -1285,16 +1799,11 @@ if search_clicked:
                     client,
                 )
 
-            execution_time = (
-                time.perf_counter()
-                - start_time
+            st.session_state.execution_time = (
+                time.perf_counter() - start_time
             )
 
             st.session_state.pipeline_state = state
-
-            st.session_state.execution_time = (
-                execution_time
-            )
 
             st.session_state.submitted_query = (
                 submitted_query
@@ -1302,13 +1811,8 @@ if search_clicked:
 
         except Exception as exc:
 
-            execution_time = (
-                time.perf_counter()
-                - start_time
-            )
-
             st.session_state.execution_time = (
-                execution_time
+                time.perf_counter() - start_time
             )
 
             st.session_state.pipeline_state = None
@@ -1326,81 +1830,11 @@ if search_clicked:
 
 state = st.session_state.pipeline_state
 
-
 if state is not None:
 
-    # Clean raw HTML strings from state data objects before rendering
-    state = sanitize_pipeline_state(state)
-
     st.divider()
 
-    # =====================================================
-    # EXECUTION TIME
-    # =====================================================
-
-    render_execution_time(
-        st.session_state.execution_time
-    )
-
-    # =====================================================
-    # AGENT WORKFLOW STATUS
-    # =====================================================
-
-    status = {
-        "research": "completed",
-        "retrieval": "completed",
-        "verification": "completed",
-        "synthesis": "completed",
-    }
-
-    pipeline_status = state.get(
-        "status",
-        "",
-    )
-
-    if pipeline_status == "research_failed":
-
-        status = {
-            "research": "failed",
-            "retrieval": "pending",
-            "verification": "pending",
-            "synthesis": "pending",
-        }
-
-    elif pipeline_status == "retrieval_failed":
-
-        status = {
-            "research": "completed",
-            "retrieval": "failed",
-            "verification": "pending",
-            "synthesis": "pending",
-        }
-
-    elif pipeline_status == "verification_failed":
-
-        status = {
-            "research": "completed",
-            "retrieval": "completed",
-            "verification": "failed",
-            "synthesis": "pending",
-        }
-
-    elif pipeline_status == "synthesis_failed":
-
-        status = {
-            "research": "completed",
-            "retrieval": "completed",
-            "verification": "completed",
-            "synthesis": "failed",
-        }
-
-    render_agent_status(status)
-
-    st.divider()
-
-    # =====================================================
-    # DATA
-    # =====================================================
+    # Retrieve core data
 
     verified_citations = state.get(
         "verified_citations",
@@ -1417,189 +1851,446 @@ if state is not None:
         [],
     )
 
-    # =====================================================
-    # VERIFICATION SUMMARY
-    # =====================================================
-
-    render_verification_summary(
-        verified_count=len(verified_citations),
-        rejected_count=len(rejected_citations),
-        evidence_count=len(retrieved_chunks),
-    )
-
-    st.divider()
 
     # =====================================================
-    # VERIFIED CITATIONS
+    # STEP 2: QUICK SUMMARY DASHBOARD
     # =====================================================
-
-    if verified_citations:
-
-        st.markdown(
-            '<div class="section-title">✅ Verified Citations</div>',
-            unsafe_allow_html=True,
-        )
-
-        for item in verified_citations:
-
-            with st.container(border=True):
-                if isinstance(item, dict):
-                    cit_text = item.get("citation", "Verified Precedent")
-                    case_name = item.get("case_name", "")
-                    court = item.get("court", "")
-                    year = item.get("year", "")
-
-                    st.markdown(f"### ✅ **{cit_text}**")
-                    if case_name:
-                        st.markdown(f"**Case:** {case_name}")
-                    if court or year:
-                        st.markdown(f"**Court:** {court} | **Year:** {year}")
-                else:
-                    st.success(f"✓ {item}")
-
-    # =====================================================
-    # REJECTED CITATIONS
-    # =====================================================
-
-    if rejected_citations:
-
-        st.markdown(
-            '<div class="section-title">❌ Rejected / Unverified Citations</div>',
-            unsafe_allow_html=True,
-        )
-
-        for item in rejected_citations:
-
-            with st.container(border=True):
-                if isinstance(item, dict):
-                    citation_text = item.get("citation", str(item))
-                    reason_text = item.get("reason", "Citation could not be verified.")
-                else:
-                    citation_text = str(item)
-                    reason_text = "Citation could not be verified."
-
-                st.error(f"✗ REJECTED — {citation_text}")
-                st.caption(reason_text)
-
-    # =====================================================
-    # RESPONSE PANEL
-    # =====================================================
-
-    st.divider()
-
-    render_response_panel(state)
-
-    # =====================================================
-    # RETRIEVED EVIDENCE
-    # =====================================================
-
-    st.divider()
 
     st.markdown(
-        '<div class="section-title">📚 Retrieved Evidence</div>',
-        unsafe_allow_html=True,
+        "### 📊 Verification Summary Dashboard"
     )
 
-    st.markdown(
-        """
-        <div class="evidence-intro">
-            Evidence retrieved from the Pakistani legal
-            judgment corpus and used by the verification/
-            synthesis pipeline.
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.caption(
+        "A compact overview of citation verification and Truth Registry performance."
     )
 
-    if retrieved_chunks:
+    total_cites = (
+        len(verified_citations)
+        + len(rejected_citations)
+    )
 
-        for index, chunk in enumerate(
-            retrieved_chunks,
-            start=1,
+    verified_count = len(
+        verified_citations
+    )
+
+    rejected_count = len(
+        rejected_citations
+    )
+
+    accuracy = (
+        round(
+            (verified_count / total_cites) * 100,
+            1,
+        )
+        if total_cites > 0
+        else 0
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+
+        st.metric(
+            label="Total Citations Analyzed",
+            value=total_cites,
+        )
+
+    with col2:
+
+        st.metric(
+            label="✅ Verified Citations",
+            value=verified_count,
+            delta="Real Precedents",
+        )
+
+    with col3:
+
+        st.metric(
+            label="❌ Rejected Hallucinations",
+            value=rejected_count,
+            delta="-Caught",
+            delta_color="inverse",
+        )
+
+    with col4:
+
+        st.metric(
+            label="Truth Index Accuracy",
+            value=f"{accuracy}%",
+        )
+
+    st.divider()
+
+
+    # =====================================================
+    # STEP 3: INTERACTIVE TABS
+    # =====================================================
+
+    tab1, tab2, tab3, tab4 = st.tabs(
+        [
+            "🧠 Research Response",
+            "✅ Citation Audit",
+            "📚 Evidence Explorer",
+            "📊 Pipeline Metrics",
+        ]
+    )
+
+
+    # -----------------------------------------------------
+    # TAB 1: RESEARCH RESPONSE & EXPORT
+    # -----------------------------------------------------
+
+    with tab1:
+
+        render_response_panel(
+            state
+        )
+
+        st.divider()
+
+        final_answer = state.get(
+            "final_answer",
+            "",
+        )
+
+        if final_answer and final_answer.strip():
+
+            execution_time = (
+                st.session_state.execution_time
+            )
+
+            try:
+
+                pdf_bytes = create_pdf_report(
+                    st.session_state.submitted_query,
+                    state,
+                    execution_time,
+                )
+
+                st.download_button(
+                    label="📥 Download PDF Report",
+                    data=pdf_bytes,
+                    file_name="lexverify_ai_legal_research_report.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    type="primary",
+                )
+
+            except Exception as exc:
+
+                st.error(
+                    f"Unable to generate PDF report: {exc}"
+                )
+
+        else:
+
+            st.info(
+                "PDF export will be available when a final research response is generated."
+            )
+
+
+    # -----------------------------------------------------
+    # TAB 2: CITATION AUDIT
+    # -----------------------------------------------------
+
+    with tab2:
+
+        if verified_citations:
+
+            st.markdown(
+                "### ✅ Verified Citations"
+            )
+
+            for item in verified_citations:
+
+                if not isinstance(item, dict):
+                    continue
+
+                citation = clean_ui_text(
+                    item.get(
+                        "citation",
+                        "Unknown citation",
+                    )
+                )
+
+                case_name = clean_ui_text(
+                    item.get(
+                        "case_name",
+                        item.get(
+                            "title",
+                            "Unknown case",
+                        ),
+                    )
+                )
+
+                court = clean_ui_text(
+                    item.get(
+                        "court",
+                        "Unknown court",
+                    )
+                )
+
+                year = clean_ui_text(
+                    item.get(
+                        "year",
+                        "Unknown year",
+                    )
+                )
+
+                # Fetch new backend variables gracefully
+
+                reason = clean_ui_text(
+                    item.get(
+                        "reason",
+                        item.get(
+                            "citation_reason",
+                            "Verified via Truth Registry.",
+                        ),
+                    )
+                )
+
+                source_trace = clean_ui_text(
+                    item.get(
+                        "source_trace",
+                        "Mapped to verified vector corpus.",
+                    )
+                )
+
+                with st.container(
+                    border=True
+                ):
+
+                    st.markdown(
+                        f"### ✅ **{citation}**"
+                    )
+
+                    # --- NEW CONDITIONAL LOGIC ---
+
+                    meta_info = []
+
+                    if case_name and case_name != "Unknown case":
+                        meta_info.append(
+                            f"**Case:** {case_name}"
+                        )
+
+                    if court and court != "Unknown court":
+                        meta_info.append(
+                            f"**Court:** {court}"
+                        )
+
+                    if year and year != "Unknown year":
+                        meta_info.append(
+                            f"**Year:** {year}"
+                        )
+
+                    if meta_info:
+
+                        st.markdown(
+                            " | ".join(meta_info)
+                        )
+
+                    # -----------------------------
+
+                    with st.expander(
+                        "🔍 View Verdict Reasoning & Trace"
+                    ):
+
+                        st.write(
+                            f"**Reason:** {reason}"
+                        )
+
+                        st.code(
+                            f"Source Trace Mapping:\n{source_trace}"
+                        )
+
+
+        if rejected_citations:
+
+            st.markdown(
+                "### ❌ Rejected / Unverified Citations"
+            )
+
+            for item in rejected_citations:
+
+                if isinstance(item, dict):
+
+                    citation = clean_ui_text(
+                        item.get(
+                            "citation",
+                            item.get(
+                                "text",
+                                str(item),
+                            ),
+                        )
+                    )
+
+                    reason = clean_ui_text(
+                        item.get(
+                            "reason",
+                            item.get(
+                                "citation_reason",
+                                "Hallucination caught by Truth Registry.",
+                            ),
+                        )
+                    )
+
+                else:
+
+                    citation = clean_ui_text(
+                        str(item)
+                    )
+
+                    reason = (
+                        "Hallucination caught by Truth Registry."
+                    )
+
+                with st.container(
+                    border=True
+                ):
+
+                    st.error(
+                        f"✗ REJECTED — {citation}"
+                    )
+
+                    with st.expander(
+                        "🔍 View Rejection Reason"
+                    ):
+
+                        st.write(
+                            f"**Reason:** {reason}"
+                        )
+
+
+        if (
+            not verified_citations
+            and not rejected_citations
         ):
 
-            if not isinstance(chunk, dict):
-                continue
-
-            source_file = chunk.get(
-                "source_file",
-                chunk.get(
-                    "source",
-                    "Unknown source",
-                ),
+            st.info(
+                "No citations were audited during this run."
             )
 
-            text = chunk.get(
-                "text",
-                chunk.get(
-                    "content",
-                    "",
-                ),
-            )
 
-            with st.expander(
-                f"📄 Evidence {index} — {source_file}"
-            ):
+    # -----------------------------------------------------
+    # TAB 3: EVIDENCE EXPLORER
+    # -----------------------------------------------------
 
-                st.markdown(str(text))
+    with tab3:
 
-    else:
-
-        st.info(
-            "No evidence chunks were retrieved."
+        st.markdown(
+            "### 📚 Retrieved Evidence"
         )
 
-    # =====================================================
-    # EXPORT REPORT
-    # =====================================================
+        st.caption(
+            "Evidence retrieved from the Pakistani legal judgment corpus and used by the verification pipeline."
+        )
 
-    st.divider()
+        if retrieved_chunks:
 
-    st.markdown(
-        '<div class="section-title">📄 Export Report</div>',
-        unsafe_allow_html=True,
-    )
+            for index, chunk in enumerate(
+                retrieved_chunks,
+                start=1,
+            ):
 
-    final_answer = state.get(
-        "final_answer",
-        "",
-    )
+                if not isinstance(chunk, dict):
+                    continue
 
-    if final_answer and final_answer.strip():
+                source_file = chunk.get(
+                    "source_file",
+                    chunk.get(
+                        "source",
+                        "Unknown source",
+                    ),
+                )
 
-        execution_time = (
+                text = chunk.get(
+                    "text",
+                    chunk.get(
+                        "content",
+                        "",
+                    ),
+                )
+
+                with st.expander(
+                    f"📄 Evidence {index} — "
+                    f"{clean_ui_text(str(source_file))}"
+                ):
+
+                    st.markdown(
+                        clean_ui_text(str(text))
+                    )
+
+        else:
+
+            st.info(
+                "No evidence chunks were retrieved."
+            )
+
+
+    # -----------------------------------------------------
+    # TAB 4: PIPELINE METRICS
+    # -----------------------------------------------------
+
+    with tab4:
+
+        render_execution_time(
             st.session_state.execution_time
         )
 
-        try:
+        st.divider()
 
-            pdf_bytes = create_pdf_report(
-                st.session_state.submitted_query,
-                state,
-                execution_time,
+        status_map = {
+            "research": "completed",
+            "retrieval": "completed",
+            "verification": "completed",
+            "synthesis": "completed",
+        }
+
+        pipeline_status = state.get(
+            "status",
+            "",
+        )
+
+        if pipeline_status == "research_failed":
+
+            status_map.update(
+                {
+                    "research": "failed",
+                    "retrieval": "pending",
+                    "verification": "pending",
+                    "synthesis": "pending",
+                }
             )
 
-            st.download_button(
-                label="📥 Download PDF Report",
-                data=pdf_bytes,
-                file_name=(
-                    "lexverify_ai_legal_research_report.pdf"
-                ),
-                mime="application/pdf",
-                use_container_width=True,
+        elif pipeline_status == "retrieval_failed":
+
+            status_map.update(
+                {
+                    "retrieval": "failed",
+                    "verification": "pending",
+                    "synthesis": "pending",
+                }
             )
 
-        except Exception as exc:
+        elif pipeline_status == "verification_failed":
 
-            st.error(
-                f"Unable to generate PDF report: {exc}"
+            status_map.update(
+                {
+                    "verification": "failed",
+                    "synthesis": "pending",
+                }
             )
 
-    else:
+        elif pipeline_status == "synthesis_failed":
 
-        st.info(
-            "PDF export will be available when a "
-            "final research response is generated."
+            status_map.update(
+                {
+                    "synthesis": "failed",
+                }
+            )
+
+        render_agent_status(
+            status_map
         )
 
 
@@ -1610,70 +2301,82 @@ if state is not None:
 else:
 
     st.info(
-        "Enter a Pakistani legal research question "
-        "or select a demo scenario to begin."
+        "Enter a Pakistani legal research question or select a demo scenario to begin."
     )
 
     st.markdown(
-        '<div class="section-title">💡 How LexVerify AI Works</div>',
-        unsafe_allow_html=True,
+        "### 💡 How LexVerify AI Works"
     )
 
-    st.markdown(
-        """
-        <div class="section-description">
-            LexVerify AI uses a four-stage citation-grounded
-            legal research workflow.
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.caption(
+        "LexVerify AI uses a four-stage citation-grounded legal research workflow."
     )
 
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
 
-        st.markdown(
-            """
-            **🔎 1. Research Agent**
+        with st.container(border=True):
 
-            Extracts useful legal search terms
-            from the user's question.
-            """
-        )
+            st.markdown(
+                "### 🔎"
+            )
+
+            st.markdown(
+                "**1. Research Agent**"
+            )
+
+            st.caption(
+                "Extracts useful legal search terms from the user's question."
+            )
 
     with col2:
 
-        st.markdown(
-            """
-            **📚 2. Retrieval Agent**
+        with st.container(border=True):
 
-            Searches the Pakistani judgment
-            corpus using FAISS.
-            """
-        )
+            st.markdown(
+                "### 📚"
+            )
+
+            st.markdown(
+                "**2. Retrieval Agent**"
+            )
+
+            st.caption(
+                "Searches the Pakistani judgment corpus using FAISS."
+            )
 
     with col3:
 
-        st.markdown(
-            """
-            **🔐 3. Verification Agent**
+        with st.container(border=True):
 
-            Checks citation candidates against
-            the deterministic Truth Registry.
-            """
-        )
+            st.markdown(
+                "### 🔐"
+            )
+
+            st.markdown(
+                "**3. Verification Agent**"
+            )
+
+            st.caption(
+                "Checks citation candidates against the deterministic Truth Registry."
+            )
 
     with col4:
 
-        st.markdown(
-            """
-            **🧠 4. Synthesis Agent**
+        with st.container(border=True):
 
-            Generates the response using
-            verified citations and evidence.
-            """
-        )
+            st.markdown(
+                "### 🧠"
+            )
+
+            st.markdown(
+                "**4. Synthesis Agent**"
+            )
+
+            st.caption(
+                "Generates the response using verified citations and evidence."
+            )
 
 
 # =========================================================
