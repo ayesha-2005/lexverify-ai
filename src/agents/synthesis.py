@@ -86,59 +86,9 @@ def _is_verified_case_evidence(
 # Evidence Selection
 # ============================================================
 
-def _is_trusted_non_case_source(
-    chunk: Dict[str, Any]
-) -> bool:
-    """
-    Statutes and the Constitution are trusted corpus sources.
-
-    They do not require case-citation verification because
-    they are primary legal source documents rather than
-    judicial precedents.
-    """
-
-    document_type = str(
-        chunk.get("document_type", "")
-    ).strip().lower()
-
-    return document_type in TRUSTED_DOCUMENT_TYPES
-
-
-def _is_verified_case_evidence(
-    chunk: Dict[str, Any],
-    verified_source_files: Set[str]
-) -> bool:
-    """
-    A judgment chunk is eligible only when its own source file
-    belongs to a citation that passed the Truth Registry gate.
-
-    This prevents an unrelated chunk from a verified judgment
-    being treated as automatically verified.
-    """
-
-    document_type = str(
-        chunk.get("document_type", "judgment")
-    ).strip().lower()
-
-    if document_type != "judgment":
-        return False
-
-    source_file = str(
-        chunk.get("source_file", "")
-    ).strip()
-
-    return (
-        bool(source_file)
-        and source_file in verified_source_files
-    )
-
-
-# ============================================================
-# Evidence Selection
-# ============================================================
 def _build_verified_evidence(
-    retrieved_chunks: List[Any],
-    verified_citations: List[Any]
+    retrieved_chunks: List[Dict[str, Any]],
+    verified_citations: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
     """
     Build evidence that is safe to pass to the Synthesis Agent.
@@ -161,7 +111,7 @@ def _build_verified_evidence(
     )
 
     evidence = []
-    
+
     for chunk in retrieved_chunks:
 
         if _is_verified_case_evidence(
@@ -503,7 +453,7 @@ RETRIEVED TRUSTED EVIDENCE
                 },
                 {
                     "role": "user",
-                    "content": state.get("user_question", "Summarize the legal findings.")
+                    "content": state["user_question"]
                 }
             ],
             temperature=0.0
