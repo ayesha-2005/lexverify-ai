@@ -1196,10 +1196,25 @@ def create_pdf_report(query, state, execution_time=None):
     if not final_answer:
         final_answer = "No final answer was generated because the verification pipeline did not produce sufficient verified evidence."
     
-    # -------------------------------------------------------------
-    # NEW PDF MARKDOWN PARSER (Fixes bold/italic missing tags)
-    # -------------------------------------------------------------
+    # Clean text and replace unicode dashes that cause black boxes (■)
     cleaned_final_answer = clean_ui_text(str(final_answer))
+    cleaned_final_answer = cleaned_final_answer.replace('–', '-').replace('—', '-').replace('•', '-')
+
+    # Convert markdown table lines into clean readable list items
+    lines = cleaned_final_answer.split('\n')
+    formatted_lines = []
+    for line in lines:
+        if line.strip().startswith('|') and '|' in line[1:]:
+            if '---' in line:
+                continue
+            cells = [c.strip() for c in line.split('|') if c.strip()]
+            if cells:
+                formatted_lines.append("• " + " — ".join(cells))
+        else:
+            formatted_lines.append(line)
+    
+    cleaned_final_answer = "\n".join(formatted_lines)
+    
     safe_answer = escape(cleaned_final_answer)
     safe_answer = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', safe_answer)
     safe_answer = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', safe_answer)
@@ -1214,11 +1229,10 @@ def create_pdf_report(query, state, execution_time=None):
         for item in verified_citations:
             if not isinstance(item, dict): continue
             
-            # -------------------------------------------------------------
-            # NEW PDF TABLE FALLBACK LOGIC (Fixes empty blank cells)
-            # -------------------------------------------------------------
             citation = clean_ui_text(item.get("citation", "")) or "N/A"
+            citation = citation.replace('–', '-').replace('—', '-')
             case_name = clean_ui_text(item.get("case_name", item.get("title", ""))) or "N/A"
+            case_name = case_name.replace('–', '-').replace('—', '-')
             court = clean_ui_text(item.get("court", "")) or "N/A"
             year = clean_ui_text(item.get("year", "")) or "N/A"
             
@@ -1250,7 +1264,7 @@ def create_pdf_report(query, state, execution_time=None):
                 citation_text = item.get("citation", item.get("text", str(item)))
             else:
                 citation_text = str(item)
-            cleaned_citation_text = clean_ui_text(str(citation_text))
+            cleaned_citation_text = clean_ui_text(str(citation_text)).replace('–', '-').replace('—', '-')
             story.append(Paragraph("REJECTED — " + escape(cleaned_citation_text), body_style))
     else:
         story.append(Paragraph("No rejected citations.", body_style))
@@ -1263,8 +1277,7 @@ def create_pdf_report(query, state, execution_time=None):
             source_file = chunk.get("source_file", chunk.get("source", "Unknown source"))
             text = chunk.get("text", chunk.get("content", ""))
             
-            # Apply markdown parsing to evidence chunks as well
-            safe_text = escape(clean_ui_text(str(text)))
+            safe_text = escape(clean_ui_text(str(text)).replace('–', '-').replace('—', '-'))
             safe_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', safe_text)
             safe_text = re.sub(r'\*([^\*]+)\*', r'<i>\1</i>', safe_text)
             safe_text = safe_text.replace("\n", "<br/>")
@@ -1281,7 +1294,7 @@ def create_pdf_report(query, state, execution_time=None):
 
     doc.build(story)
     return buffer.getvalue()
-    # -----------------------------------------------------
+     # -----------------------------------------------------
     # VERIFIED CITATIONS
     # -----------------------------------------------------
 
