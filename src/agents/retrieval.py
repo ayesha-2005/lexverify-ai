@@ -1,634 +1,745 @@
-from typing import List, Dict, Any, Set, Tuple
+"""
+LexVerify AI - Retrieval Agent
+
+Retrieves legally relevant evidence from the FAISS index.
+
+Important design:
+- Statute questions prioritize statutes.
+- Case-law questions prioritize judgments.
+- Mixed questions deliberately retrieve BOTH:
+    1. relevant CrPC/statutory evidence
+    2. relevant Pakistani case-law evidence
+- Mixed bail questions use dedicated bail queries so that
+  generic semantic similarity does not dominate the result.
+"""
+
+from typing import Any, Dict, List
 
 from src.rag.retriever import retrieve_chunks
 
 
 # ============================================================
-# Source-Aware Retrieval Configuration
+# Basic helpers
 # ============================================================
 
-SOURCE_TYPE_TO_DOCUMENT_TYPES = {
-    "statute": {"statute"},
-    "constitution": {"constitution"},
-    "case_law": {"judgment"},
-    "mixed": {
-        "statute",
-        "constitution",
-        "judgment",
-    },
-}
-
-
-# ============================================================
-# Citation Extraction
-# ============================================================
-
-def extract_candidate_citations(
+def _unique_chunks(
     chunks: List[Dict[str, Any]]
-) -> List[str]:
-    """
-    Extract candidate citations ONLY from structured chunk metadata.
+) -> List[Dict[str, Any]]:
+    """Remove duplicate chunks while preserving order."""
 
-    Never extract citations from arbitrary OCR/text content.
-    This prevents truncated or hallucinated citation strings.
-    """
-
-    candidates = []
+    result = []
     seen = set()
 
     for chunk in chunks:
-        citations = chunk.get("citations", [])
+        chunk_id = chunk.get("chunk_id")
 
-        if isinstance(citations, str):
-            citations = [citations]
-
-        if not isinstance(citations, list):
+        if chunk_id in seen:
             continue
 
-        for citation in citations:
-            if not citation:
-                continue
+        seen.add(chunk_id)
+        result.append(chunk)
 
-            citation = str(citation).strip()
-
-            if not citation:
-                continue
-
-            normalized = " ".join(
-                citation.lower().split()
-            )
-
-            if normalized not in seen:
-                seen.add(normalized)
-                candidates.append(citation)
-
-    return candidates
+    return result
 
 
-# ============================================================
-# Source Trace
-# ============================================================
-
-def build_source_trace(
-    chunks: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
+def _text(chunk: Dict[str, Any]) -> str:
     """
-    Build transparent source information for every
-    selected retrieved chunk.
+    Return whatever textual field exists in the chunk.
+
+    Different versions of the metadata may use different names.
     """
 
-    source_trace = []
+    for key in (
+        "text",
+        "content",
+        "chunk_text",
+        "page_text",
+    ):
+        value = chunk.get(key)
 
-    for chunk in chunks:
-        source_trace.append({
-            "chunk_id": chunk.get("chunk_id"),
-            "source_file": chunk.get("source_file"),
-            "page": chunk.get("page"),
-            "case_id": chunk.get("case_id"),
-            "case_name": chunk.get("case_name"),
-            "citations": chunk.get("citations", []),
-            "document_type": chunk.get(
-                "document_type",
-                "judgment"
-            ),
-            "score": chunk.get("score"),
-        })
+        if isinstance(value, str) and value.strip():
+            return value
 
-    return source_trace
+    return ""
 
 
-# ============================================================
-# Helpers
-# ============================================================
-
-def normalize_document_type(
+def _metadata_text(
     chunk: Dict[str, Any]
 ) -> str:
     """
-    Normalize the document_type stored in chunk metadata.
+    Build searchable text from structured metadata.
+
+    This is important because not every metadata record necessarily
+    contains the original chunk text.
     """
 
-    document_type = chunk.get(
+    values = []
+
+    for key in (
+        "source_file",
+        "document_title",
+        "case_name",
+        "case_id",
         "document_type",
-        ""
-    )
+    ):
+        value = chunk.get(key)
 
-    if document_type is None:
-        return ""
+        if value:
+            values.append(str(value))
 
-    return str(
-        document_type
-    ).strip().lower()
+    citations = chunk.get("citations", [])
+
+    if isinstance(citations, list):
+        values.extend(
+            str(x)
+            for x in citations
+            if x
+        )
+
+    return " ".join(values)
 
 
-def get_chunk_key(
+def _combined_text(
     chunk: Dict[str, Any]
 ) -> str:
-    """
-    Return a stable identifier used to prevent duplicate
-    chunks from appearing in the final retrieval result.
-    """
-
-    chunk_id = chunk.get("chunk_id")
-
-    if chunk_id:
-        return str(chunk_id)
+    """Return text + metadata for deterministic matching."""
 
     return (
-        f"{chunk.get('source_file', '')}:"
-        f"{chunk.get('page', '')}:"
-        f"{chunk.get('case_id', '')}"
-    )
+        _text(chunk)
+        + " "
+        + _metadata_text(chunk)
+    ).lower()
 
 
-def get_score(
+def _score(
     chunk: Dict[str, Any]
 ) -> float:
-    """
-    Safely convert retrieval score to float.
-    """
+    """Return the retriever's existing ranked score."""
 
-    try:
-        return float(
-            chunk.get("score", 0.0)
+    return float(
+        chunk.get(
+            "ranked_score",
+            chunk.get("score", 0.0),
         )
-    except (
-        TypeError,
-        ValueError
-    ):
-        return 0.0
-
-
-def sort_by_score(
-    chunks: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
-    """
-    Sort chunks from highest retrieval score to lowest.
-    """
-
-    return sorted(
-        chunks,
-        key=get_score,
-        reverse=True
+        or 0.0
     )
 
 
-def deduplicate_chunks(
-    chunks: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
+# ============================================================
+# Legal relevance scoring
+# ============================================================
+
+def _legal_relevance_score(
+    chunk: Dict[str, Any],
+    question: str,
+) -> float:
     """
-    Remove duplicate chunks while preserving order.
+    Add deterministic legal relevance on top of semantic score.
+
+    This is intentionally simple and explainable.
     """
 
-    unique_chunks = []
-    seen: Set[str] = set()
+    q = question.lower()
+    t = _combined_text(chunk)
 
-    for chunk in chunks:
-        key = get_chunk_key(chunk)
+    score = _score(chunk)
 
-        if key in seen:
-            continue
+    document_type = str(
+        chunk.get("document_type", "")
+    ).lower()
 
-        seen.add(key)
-        unique_chunks.append(chunk)
+    # --------------------------------------------------------
+    # General bail relevance
+    # --------------------------------------------------------
 
-    return unique_chunks
+    if "bail" in q and "bail" in t:
+        score += 0.12
+
+    # --------------------------------------------------------
+    # Section 497
+    # --------------------------------------------------------
+
+    if "497" in q or "bail" in q:
+
+        if "497." in t:
+            score += 0.20
+
+        if "section 497" in t:
+            score += 0.20
+
+        if "when bail may be taken" in t:
+            score += 0.15
+
+    # --------------------------------------------------------
+    # Section 498
+    # --------------------------------------------------------
+
+    if "bail" in q:
+
+        if "498." in t:
+            score += 0.22
+
+        if "section 498" in t:
+            score += 0.22
+
+        if "power to direct admission to bail" in t:
+            score += 0.18
+
+    # --------------------------------------------------------
+    # Section 498-A
+    # --------------------------------------------------------
+
+    if "bail" in q:
+
+        if "498a" in t or "498-a" in t:
+            score += 0.18
+
+        if "not in custody" in t:
+            score += 0.12
+
+        if "no case is registered" in t:
+            score += 0.12
+
+    # --------------------------------------------------------
+    # Pre-arrest bail
+    # --------------------------------------------------------
+
+    if "pre-arrest" in q or "pre arrest" in q:
+
+        if "pre-arrest bail" in t:
+            score += 0.35
+
+        if "pre arrest bail" in t:
+            score += 0.35
+
+        if "before arrest" in t:
+            score += 0.20
+
+        if "bail before arrest" in t:
+            score += 0.25
+
+    # --------------------------------------------------------
+    # Post-arrest bail
+    # --------------------------------------------------------
+
+    if "post-arrest" in q or "post arrest" in q:
+
+        if "post-arrest bail" in t:
+            score += 0.35
+
+        if "post arrest bail" in t:
+            score += 0.35
+
+        if "after arrest" in t:
+            score += 0.20
+
+        if "bail after arrest" in t:
+            score += 0.25
+
+    # --------------------------------------------------------
+    # Source-specific relevance
+    # --------------------------------------------------------
+
+    if document_type == "statute":
+
+        if "crpc_1898.pdf" in t:
+            score += 0.10
+
+        if "code of criminal procedure" in t:
+            score += 0.08
+
+    if document_type == "judgment":
+
+        if "pre-arrest bail" in t:
+            score += 0.20
+
+        if "pre arrest bail" in t:
+            score += 0.20
+
+        if "bail before arrest" in t:
+            score += 0.15
+
+    return score
 
 
 # ============================================================
-# Source-Aware Selection
+# Mixed retrieval
 # ============================================================
 
-def select_source_aware_chunks(
-    chunks: List[Dict[str, Any]],
-    source_type: str,
-    final_top_k: int = 3
+def _retrieve_mixed_bail_evidence(
+    question: str,
+    search_queries: List[str],
 ) -> List[Dict[str, Any]]:
     """
-    Select final retrieval results according to the Research
-    Agent's source classification.
+    Retrieve strong statute + case-law evidence for bail
+    comparison questions.
 
-    Rules:
-
-    STATUTE
-        Prefer statute chunks.
-        If available, include a supporting judgment only
-        when needed to fill the result set.
-
-    CONSTITUTION
-        Prefer constitution chunks.
-        If available, include a supporting judgment only
-        when needed to fill the result set.
-
-    CASE_LAW
-        Prefer judgment chunks.
-
-    MIXED
-        Preserve source diversity when possible.
-        Prefer the highest scoring relevant sources.
+    This uses dedicated retrieval queries instead of relying
+    exclusively on the Research Agent's generic queries.
     """
 
-    if not chunks:
-        return []
-
-    source_type = str(
-        source_type or "mixed"
-    ).strip().lower()
-
-    if source_type not in SOURCE_TYPE_TO_DOCUMENT_TYPES:
-        source_type = "mixed"
-
-    chunks = deduplicate_chunks(chunks)
-    chunks = sort_by_score(chunks)
-
     # --------------------------------------------------------
-    # Separate chunks by document type
+    # Dedicated statutory queries
     # --------------------------------------------------------
 
-    by_type: Dict[str, List[Dict[str, Any]]] = {
-        "statute": [],
-        "constitution": [],
-        "judgment": [],
-    }
+    statute_queries = list(search_queries)
 
-    unknown_chunks = []
-
-    for chunk in chunks:
-        document_type = normalize_document_type(chunk)
-
-        if document_type in by_type:
-            by_type[document_type].append(chunk)
-        else:
-            unknown_chunks.append(chunk)
+    statute_queries.extend(
+        [
+            "CrPC 1898 Section 497 bail",
+            "CrPC 1898 Section 498 power to direct admission to bail",
+            "CrPC 1898 Section 498A person not in custody bail",
+            "Code of Criminal Procedure 1898 Chapter XXXIX bail",
+        ]
+    )
 
     # --------------------------------------------------------
-    # STATUTE
+    # Dedicated case-law queries
     # --------------------------------------------------------
 
-    if source_type == "statute":
+    case_queries = list(search_queries)
 
-        selected = []
-
-        # First priority: statutes
-        selected.extend(
-            by_type["statute"][:final_top_k]
-        )
-
-        # If fewer than final_top_k statute chunks exist,
-        # use judgments as supporting evidence.
-        if len(selected) < final_top_k:
-
-            remaining = final_top_k - len(selected)
-
-            selected.extend(
-                by_type["judgment"][:remaining]
-            )
-
-        # Last fallback: constitution
-        if len(selected) < final_top_k:
-
-            remaining = final_top_k - len(selected)
-
-            selected.extend(
-                by_type["constitution"][:remaining]
-            )
-
-        # Absolute fallback for unexpected metadata
-        if len(selected) < final_top_k:
-
-            selected_keys = {
-                get_chunk_key(chunk)
-                for chunk in selected
-            }
-
-            for chunk in unknown_chunks:
-
-                if get_chunk_key(chunk) in selected_keys:
-                    continue
-
-                selected.append(chunk)
-
-                if len(selected) >= final_top_k:
-                    break
-
-        return selected[:final_top_k]
+    case_queries.extend(
+        [
+            "Pakistan pre-arrest bail case law",
+            "Pakistan pre-arrest bail Section 498 498-A",
+            "Pakistan pre-arrest bail Muhammad Shafique",
+            "Pakistani courts pre-arrest bail before arrest",
+            "Pakistan post-arrest bail case law Section 497",
+        ]
+    )
 
     # --------------------------------------------------------
-    # CONSTITUTION
+    # Retrieve statutes
     # --------------------------------------------------------
 
-    if source_type == "constitution":
-
-        selected = []
-
-        # First priority: Constitution
-        selected.extend(
-            by_type["constitution"][:final_top_k]
-        )
-
-        # Supporting judgments
-        if len(selected) < final_top_k:
-
-            remaining = final_top_k - len(selected)
-
-            selected.extend(
-                by_type["judgment"][:remaining]
-            )
-
-        # Last fallback: statutes
-        if len(selected) < final_top_k:
-
-            remaining = final_top_k - len(selected)
-
-            selected.extend(
-                by_type["statute"][:remaining]
-            )
-
-        # Absolute fallback
-        if len(selected) < final_top_k:
-
-            selected_keys = {
-                get_chunk_key(chunk)
-                for chunk in selected
-            }
-
-            for chunk in unknown_chunks:
-
-                if get_chunk_key(chunk) in selected_keys:
-                    continue
-
-                selected.append(chunk)
-
-                if len(selected) >= final_top_k:
-                    break
-
-        return selected[:final_top_k]
+    statute_candidates = retrieve_chunks(
+        statute_queries,
+        top_k=50,
+        source_type="statute",
+        candidate_pool=100,
+    )
 
     # --------------------------------------------------------
-    # CASE LAW
+    # Retrieve judgments
     # --------------------------------------------------------
 
-    if source_type == "case_law":
-
-        selected = []
-
-        # Primary source: judgments
-        selected.extend(
-            by_type["judgment"][:final_top_k]
-        )
-
-        # If necessary, fill from other legal sources.
-        if len(selected) < final_top_k:
-
-            remaining = final_top_k - len(selected)
-
-            selected.extend(
-                by_type["statute"][:remaining]
-            )
-
-        if len(selected) < final_top_k:
-
-            remaining = final_top_k - len(selected)
-
-            selected.extend(
-                by_type["constitution"][:remaining]
-            )
-
-        # Absolute fallback
-        if len(selected) < final_top_k:
-
-            selected_keys = {
-                get_chunk_key(chunk)
-                for chunk in selected
-            }
-
-            for chunk in unknown_chunks:
-
-                if get_chunk_key(chunk) in selected_keys:
-                    continue
-
-                selected.append(chunk)
-
-                if len(selected) >= final_top_k:
-                    break
-
-        return selected[:final_top_k]
+    judgment_candidates = retrieve_chunks(
+        case_queries,
+        top_k=50,
+        source_type="case_law",
+        candidate_pool=100,
+    )
 
     # --------------------------------------------------------
-    # MIXED
+    # Deterministic legal reranking
     # --------------------------------------------------------
 
-    # For mixed questions, preserve diversity where possible.
+    statute_candidates = sorted(
+        statute_candidates,
+        key=lambda chunk: _legal_relevance_score(
+            chunk,
+            question,
+        ),
+        reverse=True,
+    )
+
+    judgment_candidates = sorted(
+        judgment_candidates,
+        key=lambda chunk: _legal_relevance_score(
+            chunk,
+            question,
+        ),
+        reverse=True,
+    )
+
+    # --------------------------------------------------------
+    # BEST STATUTORY EVIDENCE
     #
-    # We select the best chunk from each available legal source
-    # first, then fill remaining slots using global score.
+    # We explicitly prefer chunks containing 497 and 498.
+    # --------------------------------------------------------
 
-    selected = []
-    selected_keys: Set[str] = set()
-
-    source_order = [
-        "statute",
-        "constitution",
-        "judgment",
+    section_497 = [
+        chunk
+        for chunk in statute_candidates
+        if (
+            "497." in _combined_text(chunk)
+            or "section 497" in _combined_text(chunk)
+            or "when bail may be taken" in _combined_text(chunk)
+        )
     ]
 
-    # First pass:
-    # one strong chunk from each available source type.
-    for document_type in source_order:
+    section_498 = [
+        chunk
+        for chunk in statute_candidates
+        if (
+            "498." in _combined_text(chunk)
+            or "section 498" in _combined_text(chunk)
+            or "power to direct admission to bail" in _combined_text(chunk)
+        )
+    ]
 
-        available = by_type[document_type]
+    selected = []
 
-        if not available:
-            continue
+    # Prefer Section 497.
+    if section_497:
+        selected.append(section_497[0])
 
-        chunk = available[0]
-        key = get_chunk_key(chunk)
-
-        if key not in selected_keys:
-
+    # Prefer Section 498 / 498-A.
+    for chunk in section_498:
+        if chunk.get("chunk_id") not in {
+            x.get("chunk_id")
+            for x in selected
+        }:
             selected.append(chunk)
-            selected_keys.add(key)
-
-        if len(selected) >= final_top_k:
             break
 
-    # Second pass:
-    # fill remaining slots by overall retrieval score.
-    if len(selected) < final_top_k:
+    # If the exact sections were not found, use strongest statutes.
+    for chunk in statute_candidates:
 
-        for chunk in chunks:
+        if len(selected) >= 2:
+            break
 
-            key = get_chunk_key(chunk)
+        if chunk.get("chunk_id") in {
+            x.get("chunk_id")
+            for x in selected
+        }:
+            continue
 
-            if key in selected_keys:
-                continue
+        selected.append(chunk)
 
-            selected.append(chunk)
-            selected_keys.add(key)
+    # --------------------------------------------------------
+    # BEST CASE-LAW EVIDENCE
+    # --------------------------------------------------------
 
-            if len(selected) >= final_top_k:
-                break
+    # Strongest candidates explicitly discussing pre-arrest bail.
+    pre_arrest_cases = [
+        chunk
+        for chunk in judgment_candidates
+        if (
+            "pre-arrest bail" in _combined_text(chunk)
+            or "pre arrest bail" in _combined_text(chunk)
+            or "bail before arrest" in _combined_text(chunk)
+        )
+    ]
 
-    return selected[:final_top_k]
+    # Prefer a judgment explicitly discussing pre-arrest bail.
+    if pre_arrest_cases:
+
+        selected.append(
+            pre_arrest_cases[0]
+        )
+
+    elif judgment_candidates:
+
+        # Still guarantee a judgment for mixed questions.
+        selected.append(
+            judgment_candidates[0]
+        )
+
+    # --------------------------------------------------------
+    # Final cleanup
+    # --------------------------------------------------------
+
+    selected = _unique_chunks(selected)
+
+    return selected[:3]
 
 
 # ============================================================
-# Retrieval Agent
+# Main Retrieval Agent
 # ============================================================
 
 def run_retrieval_agent(
-    state
-):
+    state: Dict[str, Any],
+) -> Dict[str, Any]:
     """
-    Retrieval Agent.
-
-    Pipeline:
-
-        Research Agent
-              |
-              v
-        search queries
-              |
-              v
-        Retrieve larger candidate pool
-              |
-              v
-        Source-aware selection
-              |
-              v
-        Candidate citations
-              |
-              v
-        Source Trace
-
-    IMPORTANT:
-
-    The lower-level retriever remains responsible for
-    semantic/hybrid retrieval.
-
-    This agent is responsible for applying the Research
-    Agent's source classification to the retrieved candidates.
+    Main Retrieval Agent.
     """
+
+    research_plan = state.get(
+        "research_plan",
+        {},
+    )
+
+    question = state.get(
+        "user_question",
+        "",
+    )
+
+    search_queries = research_plan.get(
+        "search_queries",
+        [],
+    )
+
+    source_type = research_plan.get(
+        "source_type",
+        "mixed",
+    )
+
+    if not search_queries:
+
+        state.setdefault(
+            "errors",
+            [],
+        ).append(
+            "Retrieval Agent: no search queries were provided."
+        )
+
+        state["status"] = "retrieval_failed"
+
+        return state
 
     try:
 
         # ====================================================
-        # 1. Read Research Plan
+        # MIXED
         # ====================================================
 
-        research_plan = state.get(
-            "research_plan",
-            {}
-        )
+        if source_type == "mixed":
 
-        search_queries = research_plan.get(
-            "search_queries",
-            []
-        )
+            is_bail_comparison = (
+                "bail" in question.lower()
+                and (
+                    "pre-arrest" in question.lower()
+                    or "pre arrest" in question.lower()
+                )
+                and (
+                    "post-arrest" in question.lower()
+                    or "post arrest" in question.lower()
+                )
+            )
 
-        source_type = research_plan.get(
-            "source_type",
-            "mixed"
-        )
+            if is_bail_comparison:
 
-        if not search_queries:
+                final_chunks = (
+                    _retrieve_mixed_bail_evidence(
+                        question,
+                        search_queries,
+                    )
+                )
 
-            search_queries = [
-                state["user_question"]
-            ]
+                # Candidate pool is informational only.
+                candidate_pool = final_chunks
+
+            else:
+
+                statute_candidates = retrieve_chunks(
+                    search_queries,
+                    top_k=30,
+                    source_type="statute",
+                    candidate_pool=100,
+                )
+
+                judgment_candidates = retrieve_chunks(
+                    search_queries,
+                    top_k=30,
+                    source_type="case_law",
+                    candidate_pool=100,
+                )
+
+                statute_candidates = sorted(
+                    statute_candidates,
+                    key=lambda c: _legal_relevance_score(
+                        c,
+                        question,
+                    ),
+                    reverse=True,
+                )
+
+                judgment_candidates = sorted(
+                    judgment_candidates,
+                    key=lambda c: _legal_relevance_score(
+                        c,
+                        question,
+                    ),
+                    reverse=True,
+                )
+
+                final_chunks = (
+                    statute_candidates[:2]
+                    + judgment_candidates[:1]
+                )
+
+                candidate_pool = (
+                    statute_candidates
+                    + judgment_candidates
+                )
 
         # ====================================================
-        # 2. Retrieve Larger Candidate Pool
-        # ====================================================
-        #
-        # Previously we requested only 3 chunks.
-        #
-        # That made source-aware selection impossible because
-        # the correct statute/constitution might be ranked
-        # below the first three semantic results.
-        #
-        # We now retrieve 12 candidates and then select
-        # the best source-aware 3.
+        # SINGLE SOURCE
         # ====================================================
 
-        candidate_pool = retrieve_chunks(
-            search_queries,
-            top_k=12
-        )
+        else:
+
+            candidate_pool = retrieve_chunks(
+                search_queries,
+                top_k=30,
+                source_type=source_type,
+                candidate_pool=100,
+            )
+
+            candidate_pool = sorted(
+                candidate_pool,
+                key=lambda c: _legal_relevance_score(
+                    c,
+                    question,
+                ),
+                reverse=True,
+            )
+
+            final_chunks = candidate_pool[:3]
 
         # ====================================================
-        # 3. Source-Aware Selection
+        # Deduplicate
         # ====================================================
 
-        retrieved_chunks = select_source_aware_chunks(
-            candidate_pool,
-            source_type=source_type,
-            final_top_k=3
-        )
+        final_chunks = _unique_chunks(
+            final_chunks
+        )[:3]
 
         # ====================================================
-        # 4. Store Retrieved Chunks
+        # Store chunks
         # ====================================================
 
-        state["retrieved_chunks"] = retrieved_chunks
+        state["retrieved_chunks"] = final_chunks
 
         # ====================================================
-        # 5. Extract Candidate Citations
+        # Candidate citations
         # ====================================================
+
+        candidate_citations = []
+
+        for chunk in final_chunks:
+
+            citations = chunk.get(
+                "citations",
+                [],
+            )
+
+            if not isinstance(citations, list):
+                continue
+
+            for citation in citations:
+
+                if citation not in candidate_citations:
+                    candidate_citations.append(
+                        citation
+                    )
 
         state["candidate_citations"] = (
-            extract_candidate_citations(
-                retrieved_chunks
-            )
+            candidate_citations
         )
 
         # ====================================================
-        # 6. Build Source Trace
+        # Source trace
         # ====================================================
 
-        state["source_trace"] = (
-            build_source_trace(
-                retrieved_chunks
+        source_trace = []
+
+        for chunk in final_chunks:
+
+            source_trace.append(
+                {
+                    "chunk_id": chunk.get(
+                        "chunk_id"
+                    ),
+                    "source_file": chunk.get(
+                        "source_file"
+                    ),
+                    "page": chunk.get(
+                        "page"
+                    ),
+                    "case_id": chunk.get(
+                        "case_id"
+                    ),
+                    "case_name": chunk.get(
+                        "case_name"
+                    ),
+                    "citations": chunk.get(
+                        "citations",
+                        [],
+                    ),
+                    "document_type": chunk.get(
+                        "document_type"
+                    ),
+                    "score": chunk.get(
+                        "ranked_score",
+                        chunk.get(
+                            "score",
+                            0,
+                        ),
+                    ),
+                }
             )
+
+        state["source_trace"] = source_trace
+
+        # ====================================================
+        # Logging
+        # ====================================================
+
+        print()
+        print("RETRIEVAL COMPLETED")
+        print(
+            f"  Research source_type: {source_type}"
         )
-
-        # ====================================================
-        # 7. Logging
-        # ====================================================
-
-        selected_types = [
-            normalize_document_type(chunk)
-            for chunk in retrieved_chunks
-        ]
-
-        selected_files = [
-            chunk.get("source_file")
-            for chunk in retrieved_chunks
-        ]
+        print(
+            f"  Candidate pool: {len(candidate_pool)}"
+        )
+        print(
+            f"  Final chunks: {len(final_chunks)}"
+        )
 
         print(
-            "\n"
-            "RETRIEVAL COMPLETED\n"
-            f"  Research source_type: {source_type}\n"
-            f"  Candidate pool: {len(candidate_pool)}\n"
-            f"  Final chunks: {len(retrieved_chunks)}\n"
-            f"  Document types: {selected_types}\n"
-            f"  Source files: {selected_files}\n"
+            "  Document types:",
+            [
+                c.get("document_type")
+                for c in final_chunks
+            ],
         )
 
-        state["status"] = "retrieval_completed"
+        print(
+            "  Source files:",
+            [
+                c.get("source_file")
+                for c in final_chunks
+            ],
+        )
+
+        print(
+            "  Pages:",
+            [
+                c.get("page")
+                for c in final_chunks
+            ],
+        )
+
+        print(
+            "  Citations:",
+            [
+                c.get("citations", [])
+                for c in final_chunks
+            ],
+        )
+
+        state["status"] = (
+            "retrieval_completed"
+        )
 
         return state
 
-    except Exception as e:
-
-        state["status"] = "retrieval_failed"
+    except Exception as exc:
 
         state.setdefault(
             "errors",
-            []
+            [],
         ).append(
-            f"Retrieval error: {str(e)}"
+            f"Retrieval Agent Error: {str(exc)}"
+        )
+
+        state["status"] = (
+            "retrieval_failed"
         )
 
         return state
