@@ -9,3 +9,4 @@ groq
 fpdf2
 torchvision
 reportlab
+rapidfuzz

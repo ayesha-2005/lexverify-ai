@@ -4,12 +4,16 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
+
 CLEANED_DOCS = ROOT / "data" / "cleaned_docs.json"
 METADATA_FILE = ROOT / "data" / "metadata.json"
 CHUNKS_FILE = ROOT / "data" / "chunks.json"
 
 
-# Case metadata based on the curated legal corpus
+# ============================================================
+# EXISTING CASE METADATA
+# ============================================================
+
 CASE_METADATA = {
     "case_001": {
         "case_name": "Muhammad Shafique v. The State and another",
@@ -187,17 +191,163 @@ CASE_METADATA = {
 }
 
 
+# ============================================================
+# NEW DOCUMENT METADATA
+# ============================================================
+
+DOCUMENT_METADATA = {
+
+    "03_FECTO_Belarus_PLD_2005_605.pdf": {
+        "document_type": "judgment",
+        "document_title": "FECTO Belarus Case",
+        "area": "Constitutional / Legal",
+        "topic": "Constitutional Law",
+        "citations": ["PLD 2005 Supreme Court 605"]
+    },
+
+    "04_Mobashir_Hassan_PLD_2010_265.pdf": {
+        "document_type": "judgment",
+        "document_title": "Mobashir Hassan Case",
+        "area": "Constitutional / Criminal Law",
+        "topic": "Accountability / Constitutional Law",
+        "citations": ["PLD 2010 Supreme Court 265"]
+    },
+
+    "05_Imran_Khan_v_Nawaz_Sharif_PLD_2017_692.pdf": {
+        "document_type": "judgment",
+        "document_title": "Imran Khan v. Nawaz Sharif",
+        "area": "Constitutional Law",
+        "topic": "Constitutional Law",
+        "citations": ["PLD 2017 Supreme Court 692"]
+    },
+
+    "06_Reko_Diq_Presidential_Reference_2022.pdf": {
+        "document_type": "judgment",
+        "document_title": "Reko Diq Presidential Reference",
+        "area": "Constitutional Law",
+        "topic": "Presidential Reference",
+        "citations": []
+    },
+
+    "07_Justice_Qazi_Faez_Isa_PLD_2021_SC_1.pdf": {
+        "document_type": "judgment",
+        "document_title": "Justice Qazi Faez Isa Case",
+        "area": "Constitutional Law",
+        "topic": "Constitutional Petition",
+        "citations": ["PLD 2021 Supreme Court 1"]
+    },
+
+    "Arbitration_Act_1940.pdf": {
+        "document_type": "statute",
+        "document_title": "Arbitration Act, 1940",
+        "area": "Civil Law",
+        "topic": "Arbitration",
+        "citations": []
+    },
+
+    "Companies_Act_2017.pdf": {
+        "document_type": "statute",
+        "document_title": "Companies Act, 2017",
+        "area": "Corporate Law",
+        "topic": "Company Law",
+        "citations": []
+    },
+
+    "Constitution_1973.pdf": {
+        "document_type": "constitution",
+        "document_title": "Constitution of the Islamic Republic of Pakistan, 1973",
+        "area": "Constitutional Law",
+        "topic": "Constitutional Law",
+        "citations": []
+    },
+
+    "Contract_Act_1872.pdf": {
+        "document_type": "statute",
+        "document_title": "Contract Act, 1872",
+        "area": "Civil Law",
+        "topic": "Contract Law",
+        "citations": []
+    },
+
+    "CrPC_1898.pdf": {
+        "document_type": "statute",
+        "document_title": "Code of Criminal Procedure, 1898",
+        "area": "Criminal Law",
+        "topic": "Criminal Procedure",
+        "citations": ["Cr.P.C. 1898"]
+    },
+
+    "Family_Courts_Act_1964.pdf": {
+        "document_type": "statute",
+        "document_title": "Family Courts Act, 1964",
+        "area": "Family Law",
+        "topic": "Family Courts",
+        "citations": []
+    },
+
+    "Limitation_Act_1908.pdf": {
+        "document_type": "statute",
+        "document_title": "Limitation Act, 1908",
+        "area": "Civil Law",
+        "topic": "Limitation",
+        "citations": []
+    },
+
+    "PPC_1860.pdf": {
+        "document_type": "statute",
+        "document_title": "Pakistan Penal Code, 1860",
+        "area": "Criminal Law",
+        "topic": "Criminal Offences",
+        "citations": []
+    },
+
+    "QSO_1984.pdf": {
+        "document_type": "statute",
+        "document_title": "Qanun-e-Shahadat Order, 1984",
+        "area": "Evidence Law",
+        "topic": "Law of Evidence",
+        "citations": []
+    },
+
+    "SC_Practice_final_Procedure_Act_2023.pdf": {
+        "document_type": "statute",
+        "document_title": "Supreme Court Practice and Procedure Act, 2023",
+        "area": "Constitutional Law",
+        "topic": "Supreme Court Procedure",
+        "citations": []
+    },
+
+    "Specific_Relief_Act_1877.pdf": {
+        "document_type": "statute",
+        "document_title": "Specific Relief Act, 1877",
+        "area": "Civil Law",
+        "topic": "Specific Relief",
+        "citations": []
+    },
+
+    "Transfer_of_Property_Act_1882.pdf": {
+        "document_type": "statute",
+        "document_title": "Transfer of Property Act, 1882",
+        "area": "Property Law",
+        "topic": "Transfer of Property",
+        "citations": []
+    }
+}
+
+
+# ============================================================
+# PAGE SPLITTING
+# ============================================================
+
 def split_pages(text):
-    """
-    Split OCR text using the [PAGE N] markers already present
-    in cleaned_docs.json.
-    """
+
     pattern = r"\[PAGE\s+(\d+)\]"
     matches = list(re.finditer(pattern, text))
 
     pages = []
 
     for i, match in enumerate(matches):
+
         page_number = int(match.group(1))
 
         start = match.end()
@@ -210,6 +360,7 @@ def split_pages(text):
         page_text = text[start:end].strip()
 
         if page_text:
+
             pages.append({
                 "page": page_number,
                 "text": page_text
@@ -218,8 +369,17 @@ def split_pages(text):
     return pages
 
 
+# ============================================================
+# CREATE CHUNKS
+# ============================================================
+
 def create_chunks():
-    with open(CLEANED_DOCS, "r", encoding="utf-8") as f:
+
+    with open(
+        CLEANED_DOCS,
+        "r",
+        encoding="utf-8"
+    ) as f:
         documents = json.load(f)
 
     all_chunks = []
@@ -227,22 +387,73 @@ def create_chunks():
 
     chunk_counter = 1
 
-    # Characters per chunk.
-    # Keeping this moderate works well for legal retrieval.
     CHUNK_SIZE = 1500
     OVERLAP = 250
 
+    skipped = []
+
     for document in documents:
 
-        case_id = document["doc_id"]
+        doc_id = document["doc_id"]
+        filename = document["filename"]
 
-        if case_id not in CASE_METADATA:
-            print(f"WARNING: No metadata found for {case_id}")
+        # ----------------------------------------------------
+        # Existing cases
+        # ----------------------------------------------------
+
+        if doc_id in CASE_METADATA:
+
+            info = CASE_METADATA[doc_id]
+
+            document_type = "judgment"
+
+            base_metadata = {
+                "case_id": doc_id,
+                "case_name": info["case_name"],
+                "citations": info["citations"],
+                "court": info["court"],
+                "date": info["date"],
+                "area": info["area"],
+                "topic": info["topic"],
+                "sections": info["sections"],
+                "principles": info["principles"],
+                "document_type": document_type
+            }
+
+        # ----------------------------------------------------
+        # New documents
+        # ----------------------------------------------------
+
+        elif filename in DOCUMENT_METADATA:
+
+            info = DOCUMENT_METADATA[filename]
+
+            base_metadata = {
+                "case_id": None,
+                "case_name": info["document_title"],
+                "citations": info.get("citations", []),
+                "court": None,
+                "date": None,
+                "area": info["area"],
+                "topic": info["topic"],
+                "sections": [],
+                "principles": [],
+                "document_type": info["document_type"]
+            }
+
+        else:
+
+            print(
+                f"WARNING: No metadata found for "
+                f"{filename}"
+            )
+
+            skipped.append(filename)
             continue
 
-        case_info = CASE_METADATA[case_id]
-
-        pages = split_pages(document["cleaned_text"])
+        pages = split_pages(
+            document["cleaned_text"]
+        )
 
         for page_data in pages:
 
@@ -253,26 +464,34 @@ def create_chunks():
 
             while start < len(page_text):
 
-                end = min(start + CHUNK_SIZE, len(page_text))
+                end = min(
+                    start + CHUNK_SIZE,
+                    len(page_text)
+                )
 
-                chunk_text = page_text[start:end].strip()
+                chunk_text = page_text[
+                    start:end
+                ].strip()
 
                 if chunk_text:
 
-                    chunk_id = f"chunk_{chunk_counter:05d}"
+                    chunk_id = (
+                        f"chunk_{chunk_counter:05d}"
+                    )
 
                     metadata = {
                         "chunk_id": chunk_id,
-                        "case_id": case_id,
-                        "case_name": case_info["case_name"],
-                        "citations": case_info["citations"],
-                        "court": case_info["court"],
-                        "date": case_info["date"],
-                        "area": case_info["area"],
-                        "topic": case_info["topic"],
-                        "sections": case_info["sections"],
-                        "principles": case_info["principles"],
-                        "source_file": document["filename"],
+                        "case_id": base_metadata["case_id"],
+                        "case_name": base_metadata["case_name"],
+                        "citations": base_metadata["citations"],
+                        "court": base_metadata["court"],
+                        "date": base_metadata["date"],
+                        "area": base_metadata["area"],
+                        "topic": base_metadata["topic"],
+                        "sections": base_metadata["sections"],
+                        "principles": base_metadata["principles"],
+                        "document_type": base_metadata["document_type"],
+                        "source_file": filename,
                         "page": page_number
                     }
 
@@ -291,29 +510,99 @@ def create_chunks():
 
                 start = end - OVERLAP
 
-    # Save chunks
-    with open(CHUNKS_FILE, "w", encoding="utf-8") as f:
-        json.dump(all_chunks, f, ensure_ascii=False, indent=2)
+    # --------------------------------------------------------
+    # Save
+    # --------------------------------------------------------
 
-    # Save metadata
-    with open(METADATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(all_metadata, f, ensure_ascii=False, indent=2)
+    with open(
+        CHUNKS_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        json.dump(
+            all_chunks,
+            f,
+            ensure_ascii=False,
+            indent=2
+        )
+
+    with open(
+        METADATA_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        json.dump(
+            all_metadata,
+            f,
+            ensure_ascii=False,
+            indent=2
+        )
+
+    # --------------------------------------------------------
+    # Statistics
+    # --------------------------------------------------------
+
+    document_types = {}
+
+    for chunk in all_chunks:
+
+        doc_type = chunk["document_type"]
+
+        document_types[doc_type] = (
+            document_types.get(doc_type, 0) + 1
+        )
+
+    source_files = set(
+        chunk["source_file"]
+        for chunk in all_chunks
+    )
 
     print("=" * 60)
     print("CHUNKING COMPLETE")
     print("=" * 60)
-    print("Documents:", len(documents))
-    print("Chunks:", len(all_chunks))
-    print("Metadata records:", len(all_metadata))
+
+    print(f"Documents loaded : {len(documents)}")
+    print(f"Documents chunked: {len(source_files)}")
+    print(f"Chunks           : {len(all_chunks)}")
+    print(f"Metadata records  : {len(all_metadata)}")
+
+    print()
+    print("Document types:")
+
+    for doc_type, count in sorted(
+        document_types.items()
+    ):
+        print(
+            f"  {doc_type}: {count} chunks"
+        )
+
+    if skipped:
+
+        print()
+        print("Skipped documents:")
+
+        for filename in skipped:
+            print(f"  - {filename}")
+
     print()
     print("Created:")
     print(CHUNKS_FILE)
     print(METADATA_FILE)
 
     if all_chunks:
+
         print()
         print("First chunk:")
-        print(json.dumps(all_chunks[0], ensure_ascii=False, indent=2))
+
+        print(
+            json.dumps(
+                all_chunks[0],
+                ensure_ascii=False,
+                indent=2
+            )
+        )
 
 
 if __name__ == "__main__":
